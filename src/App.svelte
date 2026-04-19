@@ -5,7 +5,6 @@
   import RuntimeSettings from "./lib/components/RuntimeSettings.svelte";
   import { createAppStore } from "./lib/stores/app";
   import {
-    describeRuntimeSource,
     type AddProjectInput,
     type UpdateSettingsInput
   } from "./lib/api/tauri";
@@ -73,9 +72,7 @@
     <section class="layout">
       <div class="stack">
         <ProjectForm
-          defaultManagedRuntimeVersion={$appStore.settings?.defaultManagedRuntimeVersion}
           disabled={$appStore.isBusy}
-          installedRuntimes={$appStore.installedRuntimes ?? []}
           on:submit={handleProjectSubmit}
         />
       </div>
@@ -118,7 +115,7 @@
           </div>
           <div>
             <dt>Runtime source</dt>
-            <dd>{describeRuntimeSource(selectedProject.runtimeSource)}</dd>
+            <dd>{selectedStatus.runtimeLabel}</dd>
           </div>
           <div>
             <dt>Resolved JAR</dt>
@@ -156,7 +153,7 @@
       <div class="stack">
         <RuntimeSettings
           disabled={$appStore.isBusy}
-          installedRuntimes={$appStore.installedRuntimes ?? []}
+          installedRuntime={$appStore.installedRuntime}
           releaseStatus={$appStore.releaseStatus}
           settings={$appStore.settings}
           on:download={() => appStore.downloadLatestRuntime()}
@@ -167,7 +164,7 @@
 
       <div class="panel stack">
         <details class="advanced-toggle">
-          <summary>System Information</summary>
+          <summary>Diagnostics &amp; paths</summary>
           <div class="stack advanced-content">
             <p class="muted">Diagnostic paths and manager configuration locations.</p>
             {#if $appStore.bootstrap}
@@ -181,8 +178,8 @@
                   <strong>{$appStore.bootstrap.settingsFile}</strong>
                 </div>
                 <div>
-                  <span class="label">Managed tools</span>
-                  <strong>{$appStore.bootstrap.toolsDir}</strong>
+                  <span class="label">Data root</span>
+                  <strong>{$appStore.bootstrap.defaultDataRoot}</strong>
                 </div>
                 <div>
                   <span class="label">Health</span>

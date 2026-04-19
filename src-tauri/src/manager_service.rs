@@ -17,7 +17,7 @@ pub struct ManagerDashboard {
     pub bootstrap: BootstrapStatus,
     pub settings: ManagerSettings,
     pub release_status: ReleaseStatus,
-    pub installed_runtimes: Vec<ManagedRuntimeRecord>,
+    pub installed_runtime: Option<ManagedRuntimeRecord>,
     pub projects: Vec<ProjectRecord>,
     pub runtime_statuses: HashMap<String, RuntimeStatusRecord>,
 }
@@ -44,35 +44,25 @@ impl ManagerService {
     pub fn load_dashboard(&self) -> Result<ManagerDashboard, String> {
         let bootstrap = self.config_store.bootstrap_status();
         let mut settings = self.config_store.get_settings();
-        let (installed_runtimes, release_status) =
+        let (installed_runtime, release_status) =
             self.release_manager.sync_with_settings(&mut settings)?;
         let settings = self.config_store.write_settings(settings)?;
 
         let projects = self.config_store.list_projects();
         let runtime_statuses =
-            self.collect_runtime_statuses(&projects, &settings, &installed_runtimes);
+            self.collect_runtime_statuses(&projects, &settings, installed_runtime.as_ref());
 
         Ok(ManagerDashboard {
             bootstrap,
             settings,
             release_status,
-            installed_runtimes,
+            installed_runtime,
             projects,
             runtime_statuses,
         })
     }
 
     pub fn add_project(&self, input: AddProjectInput) -> Result<ProjectRecord, String> {
-        if let RuntimeSource::Managed { version } = &input.runtime_source {
-            let settings = self.config_store.get_settings();
-            let installed = self.release_manager.list_installed_runtimes(&settings)?;
-            if !installed.iter().any(|runtime| runtime.version == *version) {
-                return Err(format!(
-                    "Managed JavaLens runtime {version} is not installed yet. Download it first."
-                ));
-            }
-        }
-
         self.config_store.add_project(input)
     }
 
@@ -113,9 +103,10 @@ impl ManagerService {
             .config_store
             .get_project(project_id)
             .ok_or_else(|| format!("Unknown project id: {project_id}"))?;
+        let settings = self.config_store.get_settings();
         match self.resolve_runtime_reference(&project) {
             Ok(reference) => self.runtime_manager.get_runtime_status(&reference),
-            Err(detail) => Ok(self.unresolved_runtime_status(&project, detail)),
+            Err(detail) => Ok(self.unresolved_runtime_status(&project, &settings, detail)),
         }
     }
 
@@ -123,18 +114,18 @@ impl ManagerService {
         &self,
         projects: &[ProjectRecord],
         settings: &ManagerSettings,
-        installed_runtimes: &[ManagedRuntimeRecord],
+        installed_runtime: Option<&ManagedRuntimeRecord>,
     ) -> HashMap<String, RuntimeStatusRecord> {
         let mut statuses = HashMap::new();
 
         for project in projects {
             let status =
-                match self.resolve_runtime_reference_with(project, settings, installed_runtimes) {
+                match self.resolve_runtime_reference_with(project, settings, installed_runtime) {
                     Ok(reference) => self
                         .runtime_manager
                         .get_runtime_status(&reference)
-                        .unwrap_or_else(|error| self.unresolved_runtime_status(project, error)),
-                    Err(detail) => self.unresolved_runtime_status(project, detail),
+                        .unwrap_or_else(|error| self.unresolved_runtime_status(project, settings, error)),
+                    Err(detail) => self.unresolved_runtime_status(project, settings, detail),
                 };
             statuses.insert(project.id.clone(), status);
         }
@@ -158,45 +149,35 @@ impl ManagerService {
         project: &ProjectRecord,
     ) -> Result<RuntimeReference, String> {
         let settings = self.config_store.get_settings();
-        let installed = self.release_manager.list_installed_runtimes(&settings)?;
-        self.resolve_runtime_reference_with(project, &settings, &installed)
+        let installed = self.release_manager.get_installed_runtime(&settings)?;
+        self.resolve_runtime_reference_with(project, &settings, installed.as_ref())
     }
 
     fn resolve_runtime_reference_with(
         &self,
         project: &ProjectRecord,
         settings: &ManagerSettings,
-        installed_runtimes: &[ManagedRuntimeRecord],
+        installed_runtime: Option<&ManagedRuntimeRecord>,
     ) -> Result<RuntimeReference, String> {
-        match &project.runtime_source {
-            RuntimeSource::Managed { version } => {
-                let selected_version = if version.trim().is_empty() {
-                    settings
-                        .default_managed_runtime_version
-                        .clone()
-                        .ok_or("No default managed JavaLens runtime version is selected yet")?
-                } else {
-                    version.clone()
-                };
-                let runtime = installed_runtimes
-                    .iter()
-                    .find(|runtime| runtime.version == selected_version)
+        let workspace_dir = crate::config::display_path(&settings.workspace_root().join(&project.id));
+        match &settings.global_runtime_source {
+            RuntimeSource::Managed => {
+                let runtime = installed_runtime
                     .ok_or_else(|| {
-                        format!(
-                            "Managed JavaLens runtime {selected_version} is not installed. Download the latest release first."
-                        )
+                        "No managed JavaLens runtime is installed. Download the latest release first."
+                            .to_string()
                     })?;
 
                 Ok(RuntimeReference {
                     project_id: project.id.clone(),
-                    workspace_dir: project.workspace_dir.clone(),
+                    workspace_dir,
                     runtime_label: format!("Managed JavaLens {}", runtime.version),
                     resolved_jar_path: runtime.jar_path.clone(),
                 })
             }
             RuntimeSource::LocalJar { jar_path } => Ok(RuntimeReference {
                 project_id: project.id.clone(),
-                workspace_dir: project.workspace_dir.clone(),
+                workspace_dir,
                 runtime_label: "Local JavaLens JAR".into(),
                 resolved_jar_path: jar_path.clone(),
             }),
@@ -206,12 +187,14 @@ impl ManagerService {
     fn unresolved_runtime_status(
         &self,
         project: &ProjectRecord,
+        settings: &ManagerSettings,
         detail: String,
     ) -> RuntimeStatusRecord {
+        let workspace_dir = crate::config::display_path(&settings.workspace_root().join(&project.id));
         RuntimeStatusRecord::unresolved(
             project.id.clone(),
-            project.workspace_dir.clone(),
-            project.runtime_source.label(),
+            workspace_dir,
+            settings.global_runtime_source.label(),
             detail,
         )
     }

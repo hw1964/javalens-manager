@@ -20,9 +20,8 @@ pub struct BootstrapStatus {
     pub projects_file: String,
     pub settings_file: String,
     pub runtime_state_file: String,
-    pub workspace_root: String,
+    pub default_data_root: String,
     pub log_dir: String,
-    pub tools_dir: String,
     pub transport: String,
     pub health_strategy: String,
 }
@@ -40,15 +39,25 @@ impl Default for UpdatePolicy {
     }
 }
 
+fn default_data_root() -> String {
+    String::new()
+}
+
+fn default_global_runtime_source() -> RuntimeSource {
+    RuntimeSource::Managed
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagerSettings {
     pub version: u32,
     pub update_policy: UpdatePolicy,
     pub auto_check_for_updates: bool,
-    pub default_managed_runtime_version: Option<String>,
     pub manual_fallback_jar_path: Option<String>,
-    pub tools_dir: String,
+    #[serde(default = "default_data_root")]
+    pub data_root: String,
+    #[serde(default = "default_global_runtime_source")]
+    pub global_runtime_source: RuntimeSource,
     pub last_release_check: Option<String>,
     pub last_seen_latest_version: Option<String>,
 }
@@ -59,26 +68,34 @@ impl ManagerSettings {
             version: 1,
             update_policy: UpdatePolicy::Ask,
             auto_check_for_updates: true,
-            default_managed_runtime_version: None,
             manual_fallback_jar_path: None,
-            tools_dir: display_path(&paths.tools_dir),
+            data_root: display_path(&paths.default_data_root),
+            global_runtime_source: RuntimeSource::Managed,
             last_release_check: None,
             last_seen_latest_version: None,
         }
+    }
+
+    pub fn tools_dir(&self) -> PathBuf {
+        PathBuf::from(&self.data_root).join("tools").join("javalens")
+    }
+
+    pub fn workspace_root(&self) -> PathBuf {
+        PathBuf::from(&self.data_root).join("workspaces")
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum RuntimeSource {
-    Managed { version: String },
+    Managed,
     LocalJar { jar_path: String },
 }
 
 impl RuntimeSource {
     pub fn label(&self) -> String {
         match self {
-            RuntimeSource::Managed { version } => format!("Managed JavaLens {version}"),
+            RuntimeSource::Managed => "Managed JavaLens (Latest)".into(),
             RuntimeSource::LocalJar { jar_path } => format!("Local JAR ({jar_path})"),
         }
     }
@@ -90,8 +107,6 @@ pub struct ProjectRecord {
     pub id: String,
     pub name: String,
     pub project_path: String,
-    pub runtime_source: RuntimeSource,
-    pub workspace_dir: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -99,8 +114,6 @@ pub struct ProjectRecord {
 pub struct AddProjectInput {
     pub name: String,
     pub project_path: String,
-    pub runtime_source: RuntimeSource,
-    pub workspace_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -108,8 +121,8 @@ pub struct AddProjectInput {
 pub struct UpdateSettingsInput {
     pub update_policy: UpdatePolicy,
     pub auto_check_for_updates: bool,
-    pub default_managed_runtime_version: Option<String>,
-    pub tools_dir: String,
+    pub data_root: String,
+    pub global_runtime_source: RuntimeSource,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -143,9 +156,8 @@ pub struct AppPaths {
     pub projects_file: PathBuf,
     pub settings_file: PathBuf,
     pub runtime_state_file: PathBuf,
-    pub workspace_root: PathBuf,
+    pub default_data_root: PathBuf,
     pub log_dir: PathBuf,
-    pub tools_dir: PathBuf,
 }
 
 impl AppPaths {
@@ -166,9 +178,8 @@ impl AppPaths {
             projects_file: config_dir.join(PROJECTS_FILE_NAME),
             settings_file: config_dir.join(SETTINGS_FILE_NAME),
             runtime_state_file: state_dir.join(RUNTIME_STATE_FILE_NAME),
-            workspace_root: cache_dir.join("workspaces"),
+            default_data_root: cache_dir.clone(),
             log_dir: state_dir.join("logs"),
-            tools_dir: cache_dir.join("tools").join("javalens"),
             config_dir,
             state_dir,
             cache_dir,
@@ -180,9 +191,8 @@ impl AppPaths {
             &self.config_dir,
             &self.state_dir,
             &self.cache_dir,
-            &self.workspace_root,
+            &self.default_data_root,
             &self.log_dir,
-            &self.tools_dir,
         ] {
             fs::create_dir_all(dir)
                 .map_err(|error| format!("failed to create {}: {error}", dir.display()))?;
@@ -199,9 +209,8 @@ impl AppPaths {
             projects_file: display_path(&self.projects_file),
             settings_file: display_path(&self.settings_file),
             runtime_state_file: display_path(&self.runtime_state_file),
-            workspace_root: display_path(&self.workspace_root),
+            default_data_root: display_path(&self.default_data_root),
             log_dir: display_path(&self.log_dir),
-            tools_dir: display_path(&self.tools_dir),
             transport: "stdio".into(),
             health_strategy: "process-liveness-first".into(),
         }
@@ -274,21 +283,14 @@ impl ConfigStore {
     pub fn add_project(&self, input: AddProjectInput) -> Result<ProjectRecord, String> {
         validate_non_empty("name", &input.name)?;
         validate_non_empty("projectPath", &input.project_path)?;
-        validate_runtime_source(&input.runtime_source)?;
 
         let project_slug = slugify(&input.name);
         let project_id = format!("{project_slug}-{}", current_timestamp_millis());
-        let workspace_dir = input
-            .workspace_dir
-            .filter(|path| !path.trim().is_empty())
-            .unwrap_or_else(|| display_path(&self.paths.workspace_root.join(&project_id)));
 
         let project = ProjectRecord {
             id: project_id,
             name: input.name.trim().to_string(),
             project_path: input.project_path.trim().to_string(),
-            runtime_source: input.runtime_source,
-            workspace_dir,
         };
 
         let mut projects = self.projects.lock().expect("projects mutex poisoned");
@@ -318,12 +320,14 @@ impl ConfigStore {
         let mut settings = self.settings.lock().expect("settings mutex poisoned");
         settings.update_policy = input.update_policy;
         settings.auto_check_for_updates = input.auto_check_for_updates;
-        settings.default_managed_runtime_version = input.default_managed_runtime_version;
         
-        if input.tools_dir.trim().is_empty() {
-            return Err("toolsDir must not be empty".into());
+        if input.data_root.trim().is_empty() {
+            return Err("dataRoot must not be empty".into());
         }
-        settings.tools_dir = input.tools_dir.trim().to_string();
+        settings.data_root = input.data_root.trim().to_string();
+        
+        validate_runtime_source(&input.global_runtime_source)?;
+        settings.global_runtime_source = input.global_runtime_source;
         
         write_json(&self.paths.settings_file, &*settings)?;
         Ok(settings.clone())
@@ -347,7 +351,7 @@ fn validate_non_empty(field_name: &str, value: &str) -> Result<(), String> {
 
 fn validate_runtime_source(runtime_source: &RuntimeSource) -> Result<(), String> {
     match runtime_source {
-        RuntimeSource::Managed { version } => validate_non_empty("runtimeSource.version", version),
+        RuntimeSource::Managed => Ok(()),
         RuntimeSource::LocalJar { jar_path } => {
             validate_non_empty("runtimeSource.jarPath", jar_path)
         }
@@ -373,10 +377,6 @@ fn read_projects(path: &Path) -> Result<ProjectsFile, String> {
                 id: legacy_project.id,
                 name: legacy_project.name,
                 project_path: legacy_project.project_path,
-                runtime_source: RuntimeSource::LocalJar {
-                    jar_path: legacy_project.javalens_jar_path,
-                },
-                workspace_dir: legacy_project.workspace_dir,
             })
             .collect(),
     })
@@ -388,8 +388,8 @@ fn read_settings(path: &Path, paths: &AppPaths) -> Result<ManagerSettings, Strin
 
     let mut settings: ManagerSettings = serde_json::from_str(&contents)
         .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
-    if settings.tools_dir.trim().is_empty() {
-        settings.tools_dir = display_path(&paths.tools_dir);
+    if settings.data_root.trim().is_empty() {
+        settings.data_root = display_path(&paths.default_data_root);
     }
     Ok(settings)
 }
@@ -459,16 +459,15 @@ mod tests {
             projects_file: PathBuf::from("/tmp/config/projects.json"),
             settings_file: PathBuf::from("/tmp/config/settings.json"),
             runtime_state_file: PathBuf::from("/tmp/state/runtime-state.json"),
-            workspace_root: PathBuf::from("/tmp/cache/workspaces"),
+            default_data_root: PathBuf::from("/tmp/cache/javalens-manager"),
             log_dir: PathBuf::from("/tmp/state/logs"),
-            tools_dir: PathBuf::from("/tmp/cache/tools/javalens"),
         };
 
         let bootstrap = paths.bootstrap_status();
         assert_eq!(bootstrap.transport, "stdio");
         assert_eq!(bootstrap.health_strategy, "process-liveness-first");
         assert!(bootstrap.settings_file.ends_with("settings.json"));
-        assert!(bootstrap.tools_dir.ends_with("tools/javalens"));
+        assert!(bootstrap.default_data_root.ends_with("javalens-manager"));
     }
 
     #[test]
@@ -492,10 +491,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert_eq!(parsed.projects.len(), 1);
-        match &parsed.projects[0].runtime_source {
-            RuntimeSource::LocalJar { jar_path } => assert_eq!(jar_path, "/tmp/javalens.jar"),
-            RuntimeSource::Managed { .. } => panic!("legacy shape should map to LocalJar"),
-        }
+        assert_eq!(parsed.projects[0].id, "legacy-1");
     }
 
     #[test]
@@ -507,14 +503,13 @@ mod tests {
             projects_file: PathBuf::from("/tmp/config/projects.json"),
             settings_file: PathBuf::from("/tmp/config/settings.json"),
             runtime_state_file: PathBuf::from("/tmp/state/runtime-state.json"),
-            workspace_root: PathBuf::from("/tmp/cache/workspaces"),
+            default_data_root: PathBuf::from("/tmp/cache/javalens-manager"),
             log_dir: PathBuf::from("/tmp/state/logs"),
-            tools_dir: PathBuf::from("/tmp/cache/tools/javalens"),
         };
 
         let settings = ManagerSettings::default_for_paths(&paths);
         assert_eq!(settings.update_policy, UpdatePolicy::Ask);
         assert!(settings.auto_check_for_updates);
-        assert_eq!(settings.tools_dir, "/tmp/cache/tools/javalens");
+        assert_eq!(settings.data_root, "/tmp/cache/javalens-manager");
     }
 }

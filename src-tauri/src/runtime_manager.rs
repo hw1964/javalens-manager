@@ -386,9 +386,8 @@ mod tests {
             projects_file: PathBuf::from("/tmp/javalens-manager/config/projects.json"),
             settings_file: PathBuf::from("/tmp/javalens-manager/config/settings.json"),
             runtime_state_file: PathBuf::from("/tmp/javalens-manager/state/runtime-state.json"),
-            workspace_root: PathBuf::from("/tmp/javalens-manager/cache/workspaces"),
+            default_data_root: PathBuf::from("/tmp/javalens-manager/cache"),
             log_dir: PathBuf::from("/tmp/javalens-manager/state/logs"),
-            tools_dir: PathBuf::from("/tmp/javalens-manager/cache/tools/javalens"),
         }
     }
 

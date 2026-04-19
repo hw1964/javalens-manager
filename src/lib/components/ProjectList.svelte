@@ -1,8 +1,7 @@
 <script lang="ts">
-  import {
-    describeRuntimeSource,
-    type ProjectRecord,
-    type RuntimeStatusRecord
+  import type {
+    ProjectRecord,
+    RuntimeStatusRecord
   } from "../api/tauri";
 
   export let projects: ProjectRecord[] = [];
@@ -43,8 +42,8 @@
 
           <div class="meta">
             <span>Transport: {status?.transport ?? "stdio"}</span>
-            <span>Runtime: {describeRuntimeSource(project.runtimeSource)}</span>
-            <span>Workspace: {project.workspaceDir}</span>
+            <span>Runtime: {status?.runtimeLabel ?? "unknown"}</span>
+            <span>Workspace: {status?.workspaceDir ?? "unknown"}</span>
           </div>
 
           <div class="actions">

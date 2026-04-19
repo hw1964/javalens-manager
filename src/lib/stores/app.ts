@@ -20,7 +20,6 @@ interface AppState extends Partial<ManagerDashboard> {
 }
 
 const initialState: AppState = {
-  installedRuntimes: [],
   projects: [],
   runtimeStatuses: {},
   isBusy: false

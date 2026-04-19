@@ -93,18 +93,18 @@ impl ReleaseManager {
     pub fn sync_with_settings(
         &self,
         settings: &mut ManagerSettings,
-    ) -> Result<(Vec<ManagedRuntimeRecord>, ReleaseStatus), String> {
-        let mut installed = self.list_installed_runtimes(settings)?;
+    ) -> Result<(Option<ManagedRuntimeRecord>, ReleaseStatus), String> {
+        let mut installed = self.get_installed_runtime(settings)?;
 
         if !settings.auto_check_for_updates {
             let status = ReleaseStatus {
-                kind: if installed.is_empty() {
+                kind: if installed.is_none() {
                     ReleaseStatusKind::Missing
                 } else {
                     ReleaseStatusKind::CheckingDisabled
                 },
                 latest_version: settings.last_seen_latest_version.clone(),
-                default_version: settings.default_managed_runtime_version.clone(),
+                default_version: installed.as_ref().map(|r| r.version.clone()),
                 checked_at: settings.last_release_check.clone(),
                 update_available: false,
                 detail: "Automatic JavaLens release checks are disabled.".into(),
@@ -119,12 +119,12 @@ impl ReleaseManager {
                 settings.last_seen_latest_version = Some(release.version.clone());
 
                 let latest_installed = installed
-                    .iter()
-                    .any(|runtime| runtime.version == release.version);
-                let should_download = installed.is_empty()
+                    .as_ref()
+                    .map_or(false, |runtime| runtime.version == release.version);
+                let should_download = installed.is_none()
                     || (settings.update_policy == UpdatePolicy::Always && !latest_installed);
 
-                let mut detail = if installed.is_empty() {
+                let mut detail = if installed.is_none() {
                     "No managed JavaLens runtime is cached yet.".to_string()
                 } else {
                     format!("Latest upstream release is {}.", release.version)
@@ -132,32 +132,16 @@ impl ReleaseManager {
 
                 if should_download {
                     let runtime = self.install_release(&release, settings)?;
-                    installed = self.list_installed_runtimes(settings)?;
-                    settings.default_managed_runtime_version = Some(runtime.version.clone());
-                    detail = if installed.len() == 1 {
-                        format!(
-                            "Downloaded JavaLens {} into the managed tools cache.",
-                            runtime.version
-                        )
-                    } else {
-                        format!(
-                            "Managed runtime {} is ready. Installed versions: {}.",
-                            runtime.version,
-                            installed
-                                .iter()
-                                .map(|item| item.version.clone())
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        )
-                    };
-                } else if settings.default_managed_runtime_version.is_none() {
-                    settings.default_managed_runtime_version =
-                        installed.first().map(|runtime| runtime.version.clone());
+                    installed = self.get_installed_runtime(settings)?;
+                    detail = format!(
+                        "Downloaded JavaLens {} into the managed tools cache.",
+                        runtime.version
+                    );
                 }
 
                 let status = self.build_release_status(
                     Some(&release),
-                    &installed,
+                    installed.as_ref(),
                     settings,
                     Some(detail),
                     None,
@@ -168,7 +152,7 @@ impl ReleaseManager {
             Err(error) => {
                 let status = self.build_release_status(
                     None,
-                    &installed,
+                    installed.as_ref(),
                     settings,
                     None,
                     Some(format!(
@@ -188,12 +172,14 @@ impl ReleaseManager {
         let runtime = self.install_release(&release, settings)?;
         settings.last_release_check = Some(current_timestamp_string());
         settings.last_seen_latest_version = Some(release.version.clone());
-        settings.default_managed_runtime_version = Some(runtime.version.clone());
         Ok(runtime)
     }
 
-    pub fn list_installed_runtimes(&self, settings: &ManagerSettings) -> Result<Vec<ManagedRuntimeRecord>, String> {
-        let tools_dir = PathBuf::from(&settings.tools_dir);
+    pub fn get_installed_runtime(
+        &self,
+        settings: &ManagerSettings,
+    ) -> Result<Option<ManagedRuntimeRecord>, String> {
+        let tools_dir = settings.tools_dir();
         fs::create_dir_all(&tools_dir).map_err(|error| {
             format!("failed to create tools dir {}: {error}", tools_dir.display())
         })?;
@@ -227,7 +213,7 @@ impl ReleaseManager {
         }
 
         runtimes.sort_by(compare_runtime_versions_desc);
-        Ok(runtimes)
+        Ok(runtimes.into_iter().next())
     }
 
     fn fetch_latest_release(&self) -> Result<RemoteRelease, String> {
@@ -273,7 +259,7 @@ impl ReleaseManager {
     }
 
     fn install_release(&self, release: &RemoteRelease, settings: &ManagerSettings) -> Result<ManagedRuntimeRecord, String> {
-        let tools_dir = PathBuf::from(&settings.tools_dir);
+        let tools_dir = settings.tools_dir();
         fs::create_dir_all(&tools_dir).map_err(|error| {
             format!("failed to create tools dir {}: {error}", tools_dir.display())
         })?;
@@ -374,14 +360,21 @@ impl ReleaseManager {
         }
 
         let jar_relative_path = find_relative_jar_path(&extract_root)?;
-        if target_dir.exists() {
-            fs::remove_dir_all(&target_dir).map_err(|error| {
-                format!(
-                    "failed to replace managed runtime dir {}: {error}",
-                    target_dir.display()
-                )
-            })?;
+        
+        // Delete any existing javalens-* directories to enforce a single cached runtime
+        if let Ok(entries) = fs::read_dir(&tools_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if name.starts_with("javalens-") {
+                            let _ = fs::remove_dir_all(&path);
+                        }
+                    }
+                }
+            }
         }
+
         fs::rename(&extract_root, &target_dir).map_err(|error| {
             format!(
                 "failed to finalize managed runtime dir {}: {error}",
@@ -416,7 +409,7 @@ impl ReleaseManager {
     fn build_release_status(
         &self,
         release: Option<&RemoteRelease>,
-        installed: &[ManagedRuntimeRecord],
+        installed: Option<&ManagedRuntimeRecord>,
         settings: &ManagerSettings,
         detail_override: Option<String>,
         error_detail: Option<String>,
@@ -425,7 +418,7 @@ impl ReleaseManager {
             return ReleaseStatus {
                 kind: ReleaseStatusKind::CheckFailed,
                 latest_version: settings.last_seen_latest_version.clone(),
-                default_version: settings.default_managed_runtime_version.clone(),
+                default_version: installed.map(|r| r.version.clone()),
                 checked_at: settings.last_release_check.clone(),
                 update_available: false,
                 detail: error_detail,
@@ -434,10 +427,9 @@ impl ReleaseManager {
 
         if let Some(release) = release {
             let latest_installed = installed
-                .iter()
-                .any(|runtime| runtime.version == release.version);
+                .map_or(false, |runtime| runtime.version == release.version);
             let update_available = !latest_installed;
-            let kind = if installed.is_empty() {
+            let kind = if installed.is_none() {
                 ReleaseStatusKind::Missing
             } else if update_available {
                 ReleaseStatusKind::UpdateAvailable
@@ -448,7 +440,7 @@ impl ReleaseManager {
             return ReleaseStatus {
                 kind,
                 latest_version: Some(release.version.clone()),
-                default_version: settings.default_managed_runtime_version.clone(),
+                default_version: installed.map(|r| r.version.clone()),
                 checked_at: settings.last_release_check.clone(),
                 update_available,
                 detail: detail_override.unwrap_or_else(|| {
@@ -465,13 +457,13 @@ impl ReleaseManager {
         }
 
         ReleaseStatus {
-            kind: if installed.is_empty() {
+            kind: if installed.is_none() {
                 ReleaseStatusKind::Missing
             } else {
                 ReleaseStatusKind::CheckingDisabled
             },
             latest_version: settings.last_seen_latest_version.clone(),
-            default_version: settings.default_managed_runtime_version.clone(),
+            default_version: installed.map(|r| r.version.clone()),
             checked_at: settings.last_release_check.clone(),
             update_available: false,
             detail: detail_override
@@ -538,19 +530,18 @@ mod tests {
             projects_file: PathBuf::from("/tmp/config/projects.json"),
             settings_file: PathBuf::from("/tmp/config/settings.json"),
             runtime_state_file: PathBuf::from("/tmp/state/runtime-state.json"),
-            workspace_root: PathBuf::from("/tmp/cache/workspaces"),
+            default_data_root: PathBuf::from("/tmp/cache/javalens-manager"),
             log_dir: PathBuf::from("/tmp/state/logs"),
-            tools_dir: PathBuf::from("/tmp/cache/tools/javalens"),
         };
         let manager = ReleaseManager::new().expect("failed to build release manager");
         let settings = ManagerSettings::default_for_paths(&paths);
-        let installed = vec![ManagedRuntimeRecord {
+        let installed = Some(ManagedRuntimeRecord {
             version: "1.1.5".into(),
             install_dir: "/tmp/cache/tools/javalens/javalens-1.1.5".into(),
             jar_path: "/tmp/cache/tools/javalens/javalens-1.1.5/javalens.jar".into(),
             asset_name: "javalens-v1.1.5.tar.gz".into(),
             installed_at: "123".into(),
-        }];
+        });
         let release = RemoteRelease {
             version: "1.2.0".into(),
             asset_name: "javalens-v1.2.0.tar.gz".into(),
@@ -560,7 +551,7 @@ mod tests {
         };
 
         let status =
-            manager.build_release_status(Some(&release), &installed, &settings, None, None);
+            manager.build_release_status(Some(&release), installed.as_ref(), &settings, None, None);
         assert!(matches!(status.kind, ReleaseStatusKind::UpdateAvailable));
         assert!(status.update_available);
         assert_eq!(status.latest_version.as_deref(), Some("1.2.0"));

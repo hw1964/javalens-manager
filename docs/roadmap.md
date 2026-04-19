@@ -43,6 +43,21 @@ Focus on hardening the manager into a useful daily tool.
 - improve recovery behavior and operational UX around managed runtimes
 - add focused tests around settings, version selection, and runtime resolution
 
+## Sprint 5
+
+Focus on documentation clarity and consistent UI labeling for paths and scope.
+
+- see [`sprint-5-backlog.md`](sprint-5-backlog.md) for Q&A, default path table, and acceptance criteria
+
+## Sprint 6
+
+Focus on radical simplification and global configuration.
+
+- remove per-project runtime overrides
+- remove per-project workspace overrides
+- unify all paths under a single global data root
+- see [`sprint-6-backlog.md`](sprint-6-backlog.md) for details
+
 ## Later Milestones
 
 - system tray integration

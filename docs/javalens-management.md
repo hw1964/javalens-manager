@@ -79,21 +79,20 @@ Use XDG-style directories under the user home directory:
   generated/
 
 ~/.cache/javalens-manager/
-  tools/
-  workspaces/
+  tools/javalens/     # managed JavaLens unpacks (versioned dirs); configurable via settings dataRoot
+  workspaces/         # per-project Eclipse/JDT -data dirs
 ```
 
 The exact file names can evolve, but the categories should remain stable.
 
 ## Runtime Contract Per Project
 
-Each registered project should map to one managed runtime definition containing:
+Each registered project maps to the global runtime definition. The manager tracks:
 
 - project path
 - display name
-- selected upstream artifact/version
 - assigned port or connection settings
-- workspace path
+- workspace path (derived from data root)
 - log path
 - current status and last-known health
 

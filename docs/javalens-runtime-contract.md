@@ -36,10 +36,10 @@ Manager rules:
 
 ## Runtime Resolution
 
-The manager now resolves JavaLens in this order:
+The manager now resolves JavaLens based on the **Global JavaLens Source** in settings:
 
 1. selected managed runtime version from the manager-owned tools cache
-2. project-specific local JAR fallback when the user explicitly chooses local mode
+2. global local JAR fallback when the user explicitly chooses local mode
 
 The normal path is a managed runtime selected by version, not a hand-entered JAR path.
 
@@ -71,7 +71,7 @@ This is intentionally narrow and honest. It gives a reliable first vertical slic
 
 ## Stable Config Schema
 
-The persisted project file now uses a runtime-source shape rather than a raw JAR-path-only shape:
+The persisted project file now uses a simplified shape:
 
 ```json
 {
@@ -80,12 +80,7 @@ The persisted project file now uses a runtime-source shape rather than a raw JAR
     {
       "id": "example-service-1713550000000",
       "name": "Example Service",
-      "projectPath": "/path/to/java/project",
-      "runtimeSource": {
-        "kind": "managed",
-        "version": "1.2.0"
-      },
-      "workspaceDir": "/home/user/.cache/javalens-manager/workspaces/example-service-1713550000000"
+      "projectPath": "/path/to/java/project"
     }
   ]
 }
@@ -96,10 +91,22 @@ Field meanings:
 - `id`: stable manager-owned identifier
 - `name`: user-facing display name
 - `projectPath`: Java project root to auto-load into JavaLens
-- `runtimeSource`: either a managed runtime version or a local JAR fallback
-- `workspaceDir`: manager-owned Eclipse/JDT workspace path passed to `-data`
 
-Global manager settings are persisted separately in `settings.json`, including update policy and the default managed runtime version.
+Global manager settings are persisted separately in `settings.json`, including update policy, default managed runtime version, **`dataRoot`** (manager data directory), and **`globalRuntimeSource`** (managed vs local JAR).
+
+## Default paths (typical Linux, XDG)
+
+The Rust `AppPaths::detect` layout uses:
+
+| Role | Default location |
+|------|------------------|
+| Config (`projects.json`, `settings.json`) | `~/.config/javalens-manager/` |
+| State (runtime snapshots, logs) | `~/.local/state/javalens-manager/` |
+| Cache root (default data root) | `~/.cache/javalens-manager/` |
+| Per-project `-data` workspaces | `<dataRoot>/workspaces/<project-id>` |
+| Managed JavaLens installs | `<dataRoot>/tools/javalens/` (versioned subfolders) |
+
+On other platforms, base directories follow the `dirs` crate (XDG on Linux, known folders on macOS/Windows); the **relative** segments under the data root (`tools/javalens`, `workspaces`) stay the same.
 
 ## Runtime-Owned Files
 

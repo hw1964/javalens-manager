@@ -16,9 +16,8 @@ export interface BootstrapStatus {
   projectsFile: string;
   settingsFile: string;
   runtimeStateFile: string;
-  workspaceRoot: string;
+  defaultDataRoot: string;
   logDir: string;
-  toolsDir: string;
   transport: string;
   healthStrategy: string;
 }
@@ -27,9 +26,9 @@ export interface ManagerSettings {
   version: number;
   updatePolicy: UpdatePolicy;
   autoCheckForUpdates: boolean;
-  defaultManagedRuntimeVersion?: string | null;
   manualFallbackJarPath?: string | null;
-  toolsDir: string;
+  dataRoot: string;
+  globalRuntimeSource: RuntimeSource;
   lastReleaseCheck?: string | null;
   lastSeenLatestVersion?: string | null;
 }
@@ -37,7 +36,6 @@ export interface ManagerSettings {
 export type RuntimeSource =
   | {
       kind: "managed";
-      version: string;
     }
   | {
       kind: "localJar";
@@ -48,22 +46,18 @@ export interface ProjectRecord {
   id: string;
   name: string;
   projectPath: string;
-  runtimeSource: RuntimeSource;
-  workspaceDir: string;
 }
 
 export interface AddProjectInput {
   name: string;
   projectPath: string;
-  runtimeSource: RuntimeSource;
-  workspaceDir?: string;
 }
 
 export interface UpdateSettingsInput {
   updatePolicy: UpdatePolicy;
   autoCheckForUpdates: boolean;
-  defaultManagedRuntimeVersion?: string | null;
-  toolsDir: string;
+  dataRoot: string;
+  globalRuntimeSource: RuntimeSource;
 }
 
 export interface ManagedRuntimeRecord {
@@ -100,15 +94,9 @@ export interface ManagerDashboard {
   bootstrap: BootstrapStatus;
   settings: ManagerSettings;
   releaseStatus: ReleaseStatus;
-  installedRuntimes: ManagedRuntimeRecord[];
+  installedRuntime?: ManagedRuntimeRecord | null;
   projects: ProjectRecord[];
   runtimeStatuses: Record<string, RuntimeStatusRecord>;
-}
-
-export function describeRuntimeSource(runtimeSource: RuntimeSource): string {
-  return runtimeSource.kind === "managed"
-    ? `Managed JavaLens ${runtimeSource.version}`
-    : `Local JAR (${runtimeSource.jarPath})`;
 }
 
 export function getDashboard(): Promise<ManagerDashboard> {

@@ -11,7 +11,7 @@
 
   export let settings: ManagerSettings | undefined;
   export let releaseStatus: ReleaseStatus | undefined;
-  export let installedRuntimes: ManagedRuntimeRecord[] = [];
+  export let installedRuntime: ManagedRuntimeRecord | null | undefined = undefined;
   export let disabled = false;
 
   const dispatch = createEventDispatcher<{
@@ -22,33 +22,47 @@
 
   let updatePolicy: UpdatePolicy = "ask";
   let autoCheckForUpdates = true;
-  let defaultManagedRuntimeVersion = "";
-  let toolsDir = "";
+  let dataRoot = "";
+  let runtimeKind: "managed" | "localJar" = "managed";
+  let localJarPath = "";
 
   $: if (settings) {
     updatePolicy = settings.updatePolicy;
     autoCheckForUpdates = settings.autoCheckForUpdates;
-    defaultManagedRuntimeVersion = settings.defaultManagedRuntimeVersion ?? "";
-    toolsDir = settings.toolsDir;
+    dataRoot = settings.dataRoot;
+    runtimeKind = settings.globalRuntimeSource.kind;
+    if (settings.globalRuntimeSource.kind === "localJar") {
+      localJarPath = settings.globalRuntimeSource.jarPath;
+    }
   }
 
-  $: if (
-    installedRuntimes.length > 0 &&
-    defaultManagedRuntimeVersion &&
-    !installedRuntimes.some((runtime) => runtime.version === defaultManagedRuntimeVersion)
-  ) {
-    defaultManagedRuntimeVersion = installedRuntimes[0]?.version ?? "";
-  }
-
-  async function chooseToolsDir() {
+  async function chooseDataRoot() {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Select JavaLens install directory"
+      title: "Select Manager Data Root directory"
     });
 
     if (typeof selected === "string") {
-      toolsDir = selected;
+      dataRoot = selected;
+    }
+  }
+
+  async function chooseLocalJar() {
+    const selected = await open({
+      directory: false,
+      multiple: false,
+      title: "Select JavaLens JAR",
+      filters: [
+        {
+          name: "Java archive",
+          extensions: ["jar"]
+        }
+      ]
+    });
+
+    if (typeof selected === "string") {
+      localJarPath = selected;
     }
   }
 
@@ -56,18 +70,25 @@
     dispatch("save", {
       updatePolicy,
       autoCheckForUpdates,
-      defaultManagedRuntimeVersion: defaultManagedRuntimeVersion || null,
-      toolsDir
+      dataRoot,
+      globalRuntimeSource:
+        runtimeKind === "managed"
+          ? {
+              kind: "managed"
+            }
+          : {
+              kind: "localJar",
+              jarPath: localJarPath
+            }
     });
   }
 </script>
 
 <section class="panel stack">
   <div>
-    <h2>JavaLens Runtime</h2>
+    <h2>Global JavaLens Runtime</h2>
     <p class="muted">
-      The manager checks upstream releases, stores cached runtimes, and chooses a default managed
-      version for new projects.
+      Configure the single JavaLens version and data root used by all projects.
     </p>
   </div>
 
@@ -82,24 +103,54 @@
       <strong>{releaseStatus?.latestVersion ?? "unknown"}</strong>
       <p class="muted">Checked: {releaseStatus?.checkedAt ?? "not checked yet"}</p>
     </article>
-    <article class="info-card">
-      <span class="label">Managed runtimes</span>
-      <strong>{installedRuntimes.length}</strong>
-    </article>
   </div>
 
   <label class="field">
-    <span>Install directory</span>
+    <span>Manager Data Root</span>
     <div class="field-row">
       <input
-        bind:value={toolsDir}
+        bind:value={dataRoot}
         disabled={disabled}
-        placeholder="/path/to/tools/dir"
+        placeholder="/path/to/manager/data/root"
         required
       />
-      <button disabled={disabled} on:click={chooseToolsDir} type="button">Browse</button>
+      <button disabled={disabled} on:click={chooseDataRoot} type="button">Browse</button>
     </div>
   </label>
+
+  <label class="field">
+    <span>Global JavaLens Source</span>
+    <select bind:value={runtimeKind} disabled={disabled}>
+      <option disabled={!installedRuntime} value="managed">Managed runtime</option>
+      <option value="localJar">Local JAR fallback</option>
+    </select>
+  </label>
+
+  {#if runtimeKind === "managed"}
+    <div class="field">
+      <span>Using Managed JavaLens</span>
+      {#if !installedRuntime}
+        <p class="hint">No managed runtime installed yet. Download the latest release first, or use local JAR mode.</p>
+      {:else}
+        <p><strong>v{installedRuntime.version}</strong></p>
+      {/if}
+    </div>
+  {/if}
+
+  {#if runtimeKind === "localJar"}
+    <label class="field">
+      <span>Local JavaLens JAR path</span>
+      <div class="field-row">
+        <input
+          bind:value={localJarPath}
+          disabled={disabled}
+          placeholder="/path/to/javalens.jar"
+          required={runtimeKind === "localJar"}
+        />
+        <button disabled={disabled} on:click={chooseLocalJar} type="button">Browse</button>
+      </div>
+    </label>
+  {/if}
 
   <label class="field">
     <span>Update policy</span>
@@ -112,19 +163,6 @@
   <label class="checkbox-row">
     <input bind:checked={autoCheckForUpdates} disabled={disabled} type="checkbox" />
     <span>Check upstream JavaLens release on dashboard load</span>
-  </label>
-
-  <label class="field">
-    <span>Default managed runtime</span>
-    <select bind:value={defaultManagedRuntimeVersion} disabled={disabled || installedRuntimes.length === 0}>
-      {#if installedRuntimes.length === 0}
-        <option value="">No managed runtime installed yet</option>
-      {:else}
-        {#each installedRuntimes as runtime}
-          <option value={runtime.version}>{runtime.version}</option>
-        {/each}
-      {/if}
-    </select>
   </label>
 
   <div class="actions">
