@@ -8,6 +8,16 @@ Desktop manager for running and orchestrating JavaLens MCP servers across multip
 
 Early-stage project. Architecture and implementation are in progress.
 
+## Docs
+
+- [`docs/plan.md`](docs/plan.md) - project scope, boundaries, and core decisions
+- [`docs/roadmap.md`](docs/roadmap.md) - sprint-level roadmap for this repository
+- [`docs/architecture.md`](docs/architecture.md) - architecture direction and module boundaries
+- [`docs/adr/README.md`](docs/adr/README.md) - accepted architecture decision records
+- [`docs/javalens-management.md`](docs/javalens-management.md) - how upstream `javalens-mcp` is imported, versioned, and managed
+- [`docs/tauri-bootstrap.md`](docs/tauri-bootstrap.md) - Sprint 0 and Sprint 1 bootstrap path for the Tauri app
+- [`docs/prompts/phase2-agent-orchestrator.md`](docs/prompts/phase2-agent-orchestrator.md) - reusable planning prompt for the broader multi-agent program
+
 ## What It Is
 
 `javalens-manager` is a desktop application for:
@@ -109,7 +119,7 @@ Planned stack:
 
 ## Development
 
-Project setup instructions will be added as implementation begins.
+Project setup instructions now start in [`docs/tauri-bootstrap.md`](docs/tauri-bootstrap.md).
 
 Expected local prerequisites will include:
 
