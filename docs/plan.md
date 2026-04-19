@@ -2,12 +2,9 @@
 
 ## Purpose
 
-`javalens-manager` is the Phase 1 project in a larger two-repo program:
+`javalens-manager` is a Tauri desktop manager for upstream `javalens-mcp`.
 
-- `javalens-manager` in `~/CursorProjects`: Tauri desktop manager for upstream `javalens-mcp`
-- `eclipse-ai-plugin` in `~/Projects`: generic Eclipse plugin for Cursor CLI, Claude CLI, Gemini CLI, and API-backed execution
-
-This repository owns the manager/runtime side only. The Eclipse plugin is a separate project and a separate GitHub repository.
+This repository owns the manager/runtime side only and is intentionally scoped to the desktop application, runtime supervision, and JavaLens operational UX.
 
 ## Scope
 
@@ -25,8 +22,7 @@ This repository owns the manager/runtime side only. The Eclipse plugin is a sepa
 
 - modifying or forking upstream `javalens-mcp`
 - reimplementing Java semantic analysis or refactoring
-- Eclipse plugin development
-- proprietary JATS integration
+- unrelated editor plugin development
 
 ## Core Decisions
 
@@ -36,9 +32,7 @@ This repository owns the manager/runtime side only. The Eclipse plugin is a sepa
 - Multi-project support comes from managing multiple isolated `javalens` runtimes.
 - The project should stay permissively licensed and compatible with upstream `javalens-mcp`.
 
-## Delivery Shape
-
-### Phase 1: `javalens-manager`
+## Current Product Shape
 
 Build a stable desktop application that can:
 
@@ -47,10 +41,6 @@ Build a stable desktop application that can:
 - surface runtime status and logs
 - manage per-project workspaces and configuration
 - help MCP clients connect cleanly
-
-### Phase 2: `eclipse-ai-plugin`
-
-This happens in a separate repo. It depends on the lessons and patterns from Phase 1, but it is not implemented here.
 
 ## Recommended Agent Team
 

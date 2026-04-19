@@ -49,11 +49,8 @@ Focus on hardening the manager into a useful daily tool.
 - stronger multi-project workflows
 - better onboarding for MCP-capable clients
 - richer health diagnostics and troubleshooting
-- preparation for cross-repo patterns shared with `eclipse-ai-plugin`
 
 ## Not On The Immediate Roadmap
 
-- Eclipse plugin work in this repo
 - custom Java semantic features outside upstream `javalens-mcp`
-- proprietary JATS-specific integration
 - heavy optimization of agent MCP usage before the runtime is stable

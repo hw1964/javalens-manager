@@ -13,6 +13,16 @@ target
 # Contains mutation testing data
 **/mutants.out*/
 
+# Frontend / Tauri
+node_modules/
+dist/
+.svelte-kit/
+src-tauri/target/
+
+# Local-only notes and transcripts
+docs/cursor_agentic_workflow_in_cursor.md
+docs/prompts/phase2-agent-orchestrator.md
+
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore

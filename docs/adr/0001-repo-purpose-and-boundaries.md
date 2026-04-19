@@ -5,10 +5,7 @@
 
 ## Context
 
-`javalens-manager` is the Phase 1 repository in a two-repo program:
-
-- `javalens-manager` in `~/CursorProjects` provides the desktop manager/runtime shell
-- `eclipse-ai-plugin` in `~/Projects` is a separate Eclipse plugin project
+`javalens-manager` is a dedicated repository for a desktop manager/runtime shell around upstream `javalens-mcp`.
 
 The existing project docs already establish that this repository owns orchestration, runtime supervision, project registration, workspace management, and MCP client setup. They also state that upstream `javalens-mcp` remains unchanged and that Java semantic behavior stays upstream.
 
@@ -30,10 +27,9 @@ This repository will not:
 
 - fork, patch, or reimplement upstream `javalens-mcp`
 - embed custom Java semantic analysis or refactoring logic
-- implement the Eclipse plugin
-- include proprietary JATS integration
+- absorb unrelated tooling that does not belong to the JavaLens manager
 
-The Eclipse plugin remains a separate repository with its own lifecycle, backlog, and release process.
+The repository boundary should stay narrow enough that the desktop manager can evolve without mixing in broader tooling concerns.
 
 ## Consequences
 
@@ -41,17 +37,15 @@ Positive:
 
 - repository scope stays small and easier to reason about
 - upstream compatibility remains straightforward
-- Phase 1 and Phase 2 can evolve independently
 - architecture and backlog stay aligned with the actual product boundary
 
 Negative:
 
-- some concepts and docs will be duplicated across repos at first
-- cross-repo integration points must be documented explicitly
-- shared abstractions cannot be assumed to live in one monorepo
+- some future ideas may need their own repository or their own documentation set
+- the boundary needs to be defended when adjacent tooling ideas appear
 
 ## Follow-On Implications
 
 - future docs should treat `javalens-manager` as a manager/orchestrator, not as a Java tooling engine
 - upstream `javalens-mcp` should always be referenced as an external dependency
-- any Phase 2 or JATS-specific material belongs outside this repository unless it is cited only as external context
+- future documents in this repository should stay inside the manager/runtime boundary

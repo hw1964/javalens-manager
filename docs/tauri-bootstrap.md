@@ -10,6 +10,11 @@ Bootstrap `javalens-manager` as a Tauri desktop application with:
 
 This guide is for Sprint 0 and Sprint 1. It is intentionally narrow so the repo starts from a stable baseline instead of over-scaffolding.
 
+For the exact JavaLens runtime contract and the first task breakdown, also use:
+
+- [`docs/javalens-runtime-contract.md`](javalens-runtime-contract.md)
+- [`docs/sprint-1-backlog.md`](sprint-1-backlog.md)
+
 ## Prerequisites
 
 Minimum local prerequisites:

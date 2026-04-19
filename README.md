@@ -15,8 +15,9 @@ Early-stage project. Architecture and implementation are in progress.
 - [`docs/architecture.md`](docs/architecture.md) - architecture direction and module boundaries
 - [`docs/adr/README.md`](docs/adr/README.md) - accepted architecture decision records
 - [`docs/javalens-management.md`](docs/javalens-management.md) - how upstream `javalens-mcp` is imported, versioned, and managed
+- [`docs/javalens-runtime-contract.md`](docs/javalens-runtime-contract.md) - exact Sprint 1 launch, transport, health, and config contract
+- [`docs/sprint-1-backlog.md`](docs/sprint-1-backlog.md) - first runnable-slice backlog and acceptance criteria
 - [`docs/tauri-bootstrap.md`](docs/tauri-bootstrap.md) - Sprint 0 and Sprint 1 bootstrap path for the Tauri app
-- [`docs/prompts/phase2-agent-orchestrator.md`](docs/prompts/phase2-agent-orchestrator.md) - reusable planning prompt for the broader multi-agent program
 
 ## What It Is
 
@@ -95,7 +96,7 @@ If you need semantic Java analysis, navigation, refactoring, or diagnostics, tho
 
 ## Roadmap
 
-### Phase 1
+### Current Focus
 - Create the desktop manager foundation
 - Register projects
 - Launch and stop JavaLens instances
