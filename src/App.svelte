@@ -166,30 +166,32 @@
       </div>
 
       <div class="panel stack">
-        <div>
-          <h2>System Information</h2>
-          <p class="muted">Diagnostic paths and manager configuration locations.</p>
-        </div>
-        {#if $appStore.bootstrap}
-          <div class="bootstrap-grid">
-            <div>
-              <span class="label">Projects</span>
-              <strong>{$appStore.bootstrap.projectsFile}</strong>
-            </div>
-            <div>
-              <span class="label">Settings</span>
-              <strong>{$appStore.bootstrap.settingsFile}</strong>
-            </div>
-            <div>
-              <span class="label">Managed tools</span>
-              <strong>{$appStore.bootstrap.toolsDir}</strong>
-            </div>
-            <div>
-              <span class="label">Health</span>
-              <strong>{$appStore.bootstrap.healthStrategy}</strong>
-            </div>
+        <details class="advanced-toggle">
+          <summary>System Information</summary>
+          <div class="stack advanced-content">
+            <p class="muted">Diagnostic paths and manager configuration locations.</p>
+            {#if $appStore.bootstrap}
+              <div class="bootstrap-grid">
+                <div>
+                  <span class="label">Projects</span>
+                  <strong>{$appStore.bootstrap.projectsFile}</strong>
+                </div>
+                <div>
+                  <span class="label">Settings</span>
+                  <strong>{$appStore.bootstrap.settingsFile}</strong>
+                </div>
+                <div>
+                  <span class="label">Managed tools</span>
+                  <strong>{$appStore.bootstrap.toolsDir}</strong>
+                </div>
+                <div>
+                  <span class="label">Health</span>
+                  <strong>{$appStore.bootstrap.healthStrategy}</strong>
+                </div>
+              </div>
+            {/if}
           </div>
-        {/if}
+        </details>
       </div>
     </section>
   {/if}

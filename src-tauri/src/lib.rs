@@ -16,7 +16,7 @@ pub struct AppState {
 pub fn run() {
     let config_store = ConfigStore::new().expect("failed to initialize config store");
     let release_manager =
-        ReleaseManager::new(config_store.paths()).expect("failed to initialize release manager");
+        ReleaseManager::new().expect("failed to initialize release manager");
     let runtime_manager = RuntimeManager::new(config_store.paths());
     let manager_service = ManagerService::new(config_store, release_manager, runtime_manager);
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { open } from "@tauri-apps/plugin-dialog";
   import { createEventDispatcher } from "svelte";
   import type {
     ManagedRuntimeRecord,
@@ -22,11 +23,13 @@
   let updatePolicy: UpdatePolicy = "ask";
   let autoCheckForUpdates = true;
   let defaultManagedRuntimeVersion = "";
+  let toolsDir = "";
 
   $: if (settings) {
     updatePolicy = settings.updatePolicy;
     autoCheckForUpdates = settings.autoCheckForUpdates;
     defaultManagedRuntimeVersion = settings.defaultManagedRuntimeVersion ?? "";
+    toolsDir = settings.toolsDir;
   }
 
   $: if (
@@ -37,11 +40,24 @@
     defaultManagedRuntimeVersion = installedRuntimes[0]?.version ?? "";
   }
 
+  async function chooseToolsDir() {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Select JavaLens install directory"
+    });
+
+    if (typeof selected === "string") {
+      toolsDir = selected;
+    }
+  }
+
   function handleSave() {
     dispatch("save", {
       updatePolicy,
       autoCheckForUpdates,
-      defaultManagedRuntimeVersion: defaultManagedRuntimeVersion || null
+      defaultManagedRuntimeVersion: defaultManagedRuntimeVersion || null,
+      toolsDir
     });
   }
 </script>
@@ -69,9 +85,21 @@
     <article class="info-card">
       <span class="label">Managed runtimes</span>
       <strong>{installedRuntimes.length}</strong>
-      <p class="muted">{settings?.toolsDir ?? "No tools dir yet"}</p>
     </article>
   </div>
+
+  <label class="field">
+    <span>Install directory</span>
+    <div class="field-row">
+      <input
+        bind:value={toolsDir}
+        disabled={disabled}
+        placeholder="/path/to/tools/dir"
+        required
+      />
+      <button disabled={disabled} on:click={chooseToolsDir} type="button">Browse</button>
+    </div>
+  </label>
 
   <label class="field">
     <span>Update policy</span>

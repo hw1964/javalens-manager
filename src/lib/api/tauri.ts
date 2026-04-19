@@ -63,6 +63,7 @@ export interface UpdateSettingsInput {
   updatePolicy: UpdatePolicy;
   autoCheckForUpdates: boolean;
   defaultManagedRuntimeVersion?: string | null;
+  toolsDir: string;
 }
 
 export interface ManagedRuntimeRecord {

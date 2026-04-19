@@ -109,6 +109,7 @@ pub struct UpdateSettingsInput {
     pub update_policy: UpdatePolicy,
     pub auto_check_for_updates: bool,
     pub default_managed_runtime_version: Option<String>,
+    pub tools_dir: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -318,6 +319,12 @@ impl ConfigStore {
         settings.update_policy = input.update_policy;
         settings.auto_check_for_updates = input.auto_check_for_updates;
         settings.default_managed_runtime_version = input.default_managed_runtime_version;
+        
+        if input.tools_dir.trim().is_empty() {
+            return Err("toolsDir must not be empty".into());
+        }
+        settings.tools_dir = input.tools_dir.trim().to_string();
+        
         write_json(&self.paths.settings_file, &*settings)?;
         Ok(settings.clone())
     }

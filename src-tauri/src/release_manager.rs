@@ -1,5 +1,5 @@
 use crate::config::{
-    current_timestamp_string, display_path, AppPaths, ManagerSettings, UpdatePolicy,
+    current_timestamp_string, display_path, ManagerSettings, UpdatePolicy,
 };
 use flate2::read::GzDecoder;
 use reqwest::blocking::Client;
@@ -78,24 +78,23 @@ enum ArchiveKind {
 
 pub struct ReleaseManager {
     client: Client,
-    paths: AppPaths,
 }
 
 impl ReleaseManager {
-    pub fn new(paths: AppPaths) -> Result<Self, String> {
+    pub fn new() -> Result<Self, String> {
         let client = Client::builder()
             .user_agent("javalens-manager/0.1.0")
             .build()
             .map_err(|error| format!("failed to create release manager HTTP client: {error}"))?;
 
-        Ok(Self { client, paths })
+        Ok(Self { client })
     }
 
     pub fn sync_with_settings(
         &self,
         settings: &mut ManagerSettings,
     ) -> Result<(Vec<ManagedRuntimeRecord>, ReleaseStatus), String> {
-        let mut installed = self.list_installed_runtimes()?;
+        let mut installed = self.list_installed_runtimes(settings)?;
 
         if !settings.auto_check_for_updates {
             let status = ReleaseStatus {
@@ -132,8 +131,8 @@ impl ReleaseManager {
                 };
 
                 if should_download {
-                    let runtime = self.install_release(&release)?;
-                    installed = self.list_installed_runtimes()?;
+                    let runtime = self.install_release(&release, settings)?;
+                    installed = self.list_installed_runtimes(settings)?;
                     settings.default_managed_runtime_version = Some(runtime.version.clone());
                     detail = if installed.len() == 1 {
                         format!(
@@ -186,21 +185,24 @@ impl ReleaseManager {
         settings: &mut ManagerSettings,
     ) -> Result<ManagedRuntimeRecord, String> {
         let release = self.fetch_latest_release()?;
-        let runtime = self.install_release(&release)?;
+        let runtime = self.install_release(&release, settings)?;
         settings.last_release_check = Some(current_timestamp_string());
         settings.last_seen_latest_version = Some(release.version.clone());
         settings.default_managed_runtime_version = Some(runtime.version.clone());
         Ok(runtime)
     }
 
-    pub fn list_installed_runtimes(&self) -> Result<Vec<ManagedRuntimeRecord>, String> {
-        self.paths.ensure_dirs()?;
+    pub fn list_installed_runtimes(&self, settings: &ManagerSettings) -> Result<Vec<ManagedRuntimeRecord>, String> {
+        let tools_dir = PathBuf::from(&settings.tools_dir);
+        fs::create_dir_all(&tools_dir).map_err(|error| {
+            format!("failed to create tools dir {}: {error}", tools_dir.display())
+        })?;
 
         let mut runtimes = Vec::new();
-        for entry in fs::read_dir(&self.paths.tools_dir).map_err(|error| {
+        for entry in fs::read_dir(&tools_dir).map_err(|error| {
             format!(
                 "failed to read tools dir {}: {error}",
-                self.paths.tools_dir.display()
+                tools_dir.display()
             )
         })? {
             let entry = entry
@@ -270,12 +272,12 @@ impl ReleaseManager {
         })
     }
 
-    fn install_release(&self, release: &RemoteRelease) -> Result<ManagedRuntimeRecord, String> {
-        self.paths.ensure_dirs()?;
-        let target_dir = self
-            .paths
-            .tools_dir
-            .join(format!("javalens-{}", release.version));
+    fn install_release(&self, release: &RemoteRelease, settings: &ManagerSettings) -> Result<ManagedRuntimeRecord, String> {
+        let tools_dir = PathBuf::from(&settings.tools_dir);
+        fs::create_dir_all(&tools_dir).map_err(|error| {
+            format!("failed to create tools dir {}: {error}", tools_dir.display())
+        })?;
+        let target_dir = tools_dir.join(format!("javalens-{}", release.version));
         let manifest_path = target_dir.join("runtime.json");
 
         if manifest_path.exists() {
@@ -305,7 +307,7 @@ impl ReleaseManager {
             .bytes()
             .map_err(|error| format!("failed to read JavaLens archive bytes: {error}"))?;
 
-        let tmp_dir = self.paths.tools_dir.join(format!(
+        let tmp_dir = tools_dir.join(format!(
             ".tmp-{}-{}",
             release.version,
             current_timestamp_string()
@@ -517,6 +519,8 @@ fn find_relative_jar_path(root: &Path) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::AppPaths;
+    use std::path::PathBuf;
 
     #[test]
     fn compare_version_strings_prefers_newer_semver_tags() {
@@ -538,7 +542,7 @@ mod tests {
             log_dir: PathBuf::from("/tmp/state/logs"),
             tools_dir: PathBuf::from("/tmp/cache/tools/javalens"),
         };
-        let manager = ReleaseManager::new(paths.clone()).expect("failed to build release manager");
+        let manager = ReleaseManager::new().expect("failed to build release manager");
         let settings = ManagerSettings::default_for_paths(&paths);
         let installed = vec![ManagedRuntimeRecord {
             version: "1.1.5".into(),

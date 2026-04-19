@@ -64,7 +64,8 @@ impl ManagerService {
 
     pub fn add_project(&self, input: AddProjectInput) -> Result<ProjectRecord, String> {
         if let RuntimeSource::Managed { version } = &input.runtime_source {
-            let installed = self.release_manager.list_installed_runtimes()?;
+            let settings = self.config_store.get_settings();
+            let installed = self.release_manager.list_installed_runtimes(&settings)?;
             if !installed.iter().any(|runtime| runtime.version == *version) {
                 return Err(format!(
                     "Managed JavaLens runtime {version} is not installed yet. Download it first."
@@ -157,7 +158,7 @@ impl ManagerService {
         project: &ProjectRecord,
     ) -> Result<RuntimeReference, String> {
         let settings = self.config_store.get_settings();
-        let installed = self.release_manager.list_installed_runtimes()?;
+        let installed = self.release_manager.list_installed_runtimes(&settings)?;
         self.resolve_runtime_reference_with(project, &settings, &installed)
     }
 
