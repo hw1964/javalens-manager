@@ -1,18 +1,14 @@
 use crate::{
-    config::{AddProjectInput, BootstrapStatus, ProjectRecord},
+    config::{AddProjectInput, ProjectRecord, UpdateSettingsInput},
+    manager_service::ManagerDashboard,
     runtime_manager::RuntimeStatusRecord,
     AppState,
 };
 use tauri::State;
 
 #[tauri::command]
-pub fn get_bootstrap_status(state: State<'_, AppState>) -> Result<BootstrapStatus, String> {
-    Ok(state.config_store.bootstrap_status())
-}
-
-#[tauri::command]
-pub fn list_projects(state: State<'_, AppState>) -> Result<Vec<ProjectRecord>, String> {
-    Ok(state.config_store.list_projects())
+pub fn get_dashboard(state: State<'_, AppState>) -> Result<ManagerDashboard, String> {
+    state.manager_service.load_dashboard()
 }
 
 #[tauri::command]
@@ -20,7 +16,20 @@ pub fn add_project(
     state: State<'_, AppState>,
     input: AddProjectInput,
 ) -> Result<ProjectRecord, String> {
-    state.config_store.add_project(input)
+    state.manager_service.add_project(input)
+}
+
+#[tauri::command]
+pub fn update_settings(
+    state: State<'_, AppState>,
+    input: UpdateSettingsInput,
+) -> Result<ManagerDashboard, String> {
+    state.manager_service.update_settings(input)
+}
+
+#[tauri::command]
+pub fn download_or_update_javalens(state: State<'_, AppState>) -> Result<ManagerDashboard, String> {
+    state.manager_service.download_or_update_javalens()
 }
 
 #[tauri::command]
@@ -28,12 +37,7 @@ pub fn start_runtime(
     state: State<'_, AppState>,
     project_id: String,
 ) -> Result<RuntimeStatusRecord, String> {
-    let project = state
-        .config_store
-        .get_project(&project_id)
-        .ok_or_else(|| format!("Unknown project id: {project_id}"))?;
-
-    state.runtime_manager.start_runtime(&project)
+    state.manager_service.start_runtime(&project_id)
 }
 
 #[tauri::command]
@@ -41,12 +45,7 @@ pub fn stop_runtime(
     state: State<'_, AppState>,
     project_id: String,
 ) -> Result<RuntimeStatusRecord, String> {
-    let project = state
-        .config_store
-        .get_project(&project_id)
-        .ok_or_else(|| format!("Unknown project id: {project_id}"))?;
-
-    state.runtime_manager.stop_runtime(&project)
+    state.manager_service.stop_runtime(&project_id)
 }
 
 #[tauri::command]
@@ -54,10 +53,5 @@ pub fn get_runtime_status(
     state: State<'_, AppState>,
     project_id: String,
 ) -> Result<RuntimeStatusRecord, String> {
-    let project = state
-        .config_store
-        .get_project(&project_id)
-        .ok_or_else(|| format!("Unknown project id: {project_id}"))?;
-
-    state.runtime_manager.get_runtime_status(&project)
+    state.manager_service.get_runtime_status(&project_id)
 }

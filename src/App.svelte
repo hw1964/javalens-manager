@@ -2,16 +2,19 @@
   import { onMount } from "svelte";
   import ProjectForm from "./lib/components/ProjectForm.svelte";
   import ProjectList from "./lib/components/ProjectList.svelte";
+  import RuntimeSettings from "./lib/components/RuntimeSettings.svelte";
   import { createAppStore } from "./lib/stores/app";
-  import type { AddProjectInput } from "./lib/api/tauri";
+  import {
+    describeRuntimeSource,
+    type AddProjectInput,
+    type UpdateSettingsInput
+  } from "./lib/api/tauri";
 
   const appStore = createAppStore();
 
-  $: selectedProject = $appStore.projects.find(
-    (project) => project.id === $appStore.selectedProjectId
-  );
+  $: selectedProject = $appStore.projects?.find((project) => project.id === $appStore.selectedProjectId);
   $: selectedStatus = selectedProject
-    ? $appStore.runtimeStatuses[selectedProject.id]
+    ? $appStore.runtimeStatuses?.[selectedProject.id]
     : undefined;
 
   onMount(() => {
@@ -20,6 +23,10 @@
 
   function handleProjectSubmit(event: CustomEvent<AddProjectInput>) {
     appStore.addProjectEntry(event.detail);
+  }
+
+  function handleSettingsSave(event: CustomEvent<UpdateSettingsInput>) {
+    appStore.updateManagerSettings(event.detail);
   }
 </script>
 
@@ -30,30 +37,31 @@
 <main class="app-shell">
   <header class="hero panel">
     <div>
-      <p class="eyebrow">Sprint 1 thin slice</p>
+      <p class="eyebrow">Next sprint upgrade</p>
       <h1>javalens-manager</h1>
       <p class="muted">
-        Manual Tauri scaffold for one-project registration plus JavaLens start/stop/status.
+        Managed JavaLens acquisition, persisted settings, dropdown runtime selection, and a clearer
+        manager-service boundary.
       </p>
     </div>
 
     {#if $appStore.bootstrap}
       <div class="bootstrap-grid">
         <div>
-          <span class="label">Transport</span>
-          <strong>{$appStore.bootstrap.transport}</strong>
+          <span class="label">Projects</span>
+          <strong>{$appStore.bootstrap.projectsFile}</strong>
+        </div>
+        <div>
+          <span class="label">Settings</span>
+          <strong>{$appStore.bootstrap.settingsFile}</strong>
+        </div>
+        <div>
+          <span class="label">Managed tools</span>
+          <strong>{$appStore.bootstrap.toolsDir}</strong>
         </div>
         <div>
           <span class="label">Health</span>
           <strong>{$appStore.bootstrap.healthStrategy}</strong>
-        </div>
-        <div>
-          <span class="label">Config</span>
-          <strong>{$appStore.bootstrap.configFile}</strong>
-        </div>
-        <div>
-          <span class="label">Logs</span>
-          <strong>{$appStore.bootstrap.logDir}</strong>
         </div>
       </div>
     {/if}
@@ -67,7 +75,24 @@
   {/if}
 
   <section class="layout">
-    <ProjectForm disabled={$appStore.isBusy} on:submit={handleProjectSubmit} />
+    <div class="stack">
+      <RuntimeSettings
+        disabled={$appStore.isBusy}
+        installedRuntimes={$appStore.installedRuntimes ?? []}
+        releaseStatus={$appStore.releaseStatus}
+        settings={$appStore.settings}
+        on:download={() => appStore.downloadLatestRuntime()}
+        on:refresh={() => appStore.load()}
+        on:save={handleSettingsSave}
+      />
+
+      <ProjectForm
+        defaultManagedRuntimeVersion={$appStore.settings?.defaultManagedRuntimeVersion}
+        disabled={$appStore.isBusy}
+        installedRuntimes={$appStore.installedRuntimes ?? []}
+        on:submit={handleProjectSubmit}
+      />
+    </div>
 
     <ProjectList
       disabled={$appStore.isBusy}
@@ -75,8 +100,8 @@
       onSelect={(projectId) => appStore.selectProject(projectId)}
       onStart={(projectId) => appStore.startProject(projectId)}
       onStop={(projectId) => appStore.stopProject(projectId)}
-      projects={$appStore.projects}
-      runtimeStatuses={$appStore.runtimeStatuses}
+      projects={$appStore.projects ?? []}
+      runtimeStatuses={$appStore.runtimeStatuses ?? {}}
       selectedProjectId={$appStore.selectedProjectId}
     />
   </section>
@@ -106,8 +131,12 @@
           <dd>{selectedProject.projectPath}</dd>
         </div>
         <div>
-          <dt>JavaLens JAR</dt>
-          <dd>{selectedProject.javalensJarPath}</dd>
+          <dt>Runtime source</dt>
+          <dd>{describeRuntimeSource(selectedProject.runtimeSource)}</dd>
+        </div>
+        <div>
+          <dt>Resolved JAR</dt>
+          <dd>{selectedStatus.resolvedJarPath || "Not resolved yet"}</dd>
         </div>
         <div>
           <dt>Workspace</dt>
@@ -115,11 +144,15 @@
         </div>
         <div>
           <dt>Log file</dt>
-          <dd>{selectedStatus.logPath}</dd>
+          <dd>{selectedStatus.logPath || "Will be created on first launch"}</dd>
         </div>
         <div>
           <dt>PID</dt>
           <dd>{selectedStatus.pid ?? "Not running"}</dd>
+        </div>
+        <div>
+          <dt>Service mode</dt>
+          <dd>{selectedStatus.serviceMode}</dd>
         </div>
         <div>
           <dt>Health detail</dt>
@@ -128,7 +161,7 @@
       </dl>
     {:else}
       <div class="empty-state">
-        Choose a project to inspect its runtime state.
+        Choose a project to inspect its runtime selection and current status.
       </div>
     {/if}
   </section>

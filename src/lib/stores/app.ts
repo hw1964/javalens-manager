@@ -1,27 +1,26 @@
 import { writable } from "svelte/store";
 import {
   addProject,
-  getBootstrapStatus,
+  downloadOrUpdateJavalens,
+  getDashboard,
   getRuntimeStatus,
-  listProjects,
   startRuntime,
   stopRuntime,
+  updateSettings,
   type AddProjectInput,
-  type BootstrapStatus,
-  type ProjectRecord,
-  type RuntimeStatusRecord
+  type ManagerDashboard,
+  type RuntimeStatusRecord,
+  type UpdateSettingsInput
 } from "../api/tauri";
 
-interface AppState {
-  bootstrap?: BootstrapStatus;
-  projects: ProjectRecord[];
-  runtimeStatuses: Record<string, RuntimeStatusRecord>;
+interface AppState extends Partial<ManagerDashboard> {
   selectedProjectId?: string;
   isBusy: boolean;
   error?: string;
 }
 
 const initialState: AppState = {
+  installedRuntimes: [],
   projects: [],
   runtimeStatuses: {},
   isBusy: false
@@ -38,29 +37,24 @@ function normalizeError(error: unknown): string {
 export function createAppStore() {
   const { subscribe, update } = writable<AppState>(initialState);
 
+  function syncDashboard(dashboard: ManagerDashboard) {
+    update((state) => ({
+      ...state,
+      ...dashboard,
+      selectedProjectId:
+        state.selectedProjectId && dashboard.projects.some((project) => project.id === state.selectedProjectId)
+          ? state.selectedProjectId
+          : dashboard.projects[0]?.id,
+      isBusy: false,
+      error: undefined
+    }));
+  }
+
   async function load() {
     update((state) => ({ ...state, isBusy: true, error: undefined }));
 
     try {
-      const [bootstrap, projects] = await Promise.all([
-        getBootstrapStatus(),
-        listProjects()
-      ]);
-
-      const statuses = Object.fromEntries(
-        await Promise.all(
-          projects.map(async (project) => [project.id, await getRuntimeStatus(project.id)] as const)
-        )
-      );
-
-      update((state) => ({
-        ...state,
-        bootstrap,
-        projects,
-        runtimeStatuses: statuses,
-        selectedProjectId: state.selectedProjectId ?? projects[0]?.id,
-        isBusy: false
-      }));
+      syncDashboard(await getDashboard());
     } catch (error) {
       update((state) => ({
         ...state,
@@ -74,19 +68,36 @@ export function createAppStore() {
     update((state) => ({ ...state, isBusy: true, error: undefined }));
 
     try {
-      const created = await addProject(input);
-      const status = await getRuntimeStatus(created.id);
-
+      await addProject(input);
+      syncDashboard(await getDashboard());
+    } catch (error) {
       update((state) => ({
         ...state,
-        projects: [...state.projects, created],
-        runtimeStatuses: {
-          ...state.runtimeStatuses,
-          [created.id]: status
-        },
-        selectedProjectId: created.id,
-        isBusy: false
+        isBusy: false,
+        error: normalizeError(error)
       }));
+    }
+  }
+
+  async function updateManagerSettings(input: UpdateSettingsInput) {
+    update((state) => ({ ...state, isBusy: true, error: undefined }));
+
+    try {
+      syncDashboard(await updateSettings(input));
+    } catch (error) {
+      update((state) => ({
+        ...state,
+        isBusy: false,
+        error: normalizeError(error)
+      }));
+    }
+  }
+
+  async function downloadLatestRuntime() {
+    update((state) => ({ ...state, isBusy: true, error: undefined }));
+
+    try {
+      syncDashboard(await downloadOrUpdateJavalens());
     } catch (error) {
       update((state) => ({
         ...state,
@@ -101,14 +112,7 @@ export function createAppStore() {
 
     try {
       const status = await startRuntime(projectId);
-      update((state) => ({
-        ...state,
-        runtimeStatuses: {
-          ...state.runtimeStatuses,
-          [projectId]: status
-        },
-        isBusy: false
-      }));
+      mergeRuntimeStatus(projectId, status);
     } catch (error) {
       update((state) => ({
         ...state,
@@ -123,14 +127,7 @@ export function createAppStore() {
 
     try {
       const status = await stopRuntime(projectId);
-      update((state) => ({
-        ...state,
-        runtimeStatuses: {
-          ...state.runtimeStatuses,
-          [projectId]: status
-        },
-        isBusy: false
-      }));
+      mergeRuntimeStatus(projectId, status);
     } catch (error) {
       update((state) => ({
         ...state,
@@ -146,7 +143,7 @@ export function createAppStore() {
       update((state) => ({
         ...state,
         runtimeStatuses: {
-          ...state.runtimeStatuses,
+          ...(state.runtimeStatuses ?? {}),
           [projectId]: status
         }
       }));
@@ -156,6 +153,17 @@ export function createAppStore() {
         error: normalizeError(error)
       }));
     }
+  }
+
+  function mergeRuntimeStatus(projectId: string, status: RuntimeStatusRecord) {
+    update((state) => ({
+      ...state,
+      runtimeStatuses: {
+        ...(state.runtimeStatuses ?? {}),
+        [projectId]: status
+      },
+      isBusy: false
+    }));
   }
 
   function selectProject(projectId: string) {
@@ -176,6 +184,8 @@ export function createAppStore() {
     subscribe,
     load,
     addProjectEntry,
+    updateManagerSettings,
+    downloadLatestRuntime,
     startProject,
     stopProject,
     refreshProjectStatus,

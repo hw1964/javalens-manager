@@ -37,11 +37,11 @@ Focus on the first working manager slice.
 
 Focus on hardening the manager into a useful daily tool.
 
-- improve logs and error visibility
-- add per-project workspace/runtime settings
-- add generated MCP client configuration where useful
-- improve recovery behavior and operational UX
-- add focused tests around lifecycle and configuration
+- add persisted manager settings and managed JavaLens version selection
+- add release discovery plus download/cache handling for upstream JavaLens
+- replace raw JAR-path-first UX with dropdown-driven managed runtime selection
+- improve recovery behavior and operational UX around managed runtimes
+- add focused tests around settings, version selection, and runtime resolution
 
 ## Later Milestones
 

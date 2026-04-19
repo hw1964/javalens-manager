@@ -1,28 +1,33 @@
 mod commands;
 mod config;
+mod manager_service;
+mod release_manager;
 mod runtime_manager;
 
 use config::ConfigStore;
+use manager_service::ManagerService;
+use release_manager::ReleaseManager;
 use runtime_manager::RuntimeManager;
 
 pub struct AppState {
-    pub config_store: ConfigStore,
-    pub runtime_manager: RuntimeManager,
+    pub manager_service: ManagerService,
 }
 
 pub fn run() {
     let config_store = ConfigStore::new().expect("failed to initialize config store");
+    let release_manager =
+        ReleaseManager::new(config_store.paths()).expect("failed to initialize release manager");
     let runtime_manager = RuntimeManager::new(config_store.paths());
+    let manager_service = ManagerService::new(config_store, release_manager, runtime_manager);
 
     tauri::Builder::default()
-        .manage(AppState {
-            config_store,
-            runtime_manager,
-        })
+        .plugin(tauri_plugin_dialog::init())
+        .manage(AppState { manager_service })
         .invoke_handler(tauri::generate_handler![
-            commands::get_bootstrap_status,
-            commands::list_projects,
+            commands::get_dashboard,
             commands::add_project,
+            commands::update_settings,
+            commands::download_or_update_javalens,
             commands::start_runtime,
             commands::stop_runtime,
             commands::get_runtime_status,

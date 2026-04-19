@@ -17,7 +17,7 @@ The contract is based on the upstream `javalens-mcp` README:
 
 ## Exact Launch Contract
 
-For the first slice, the manager launches JavaLens as:
+For the current managed-runtime slice, the manager launches JavaLens as:
 
 ```bash
 java -jar /path/to/javalens/javalens.jar -data /path/to/manager-owned/workspace
@@ -33,6 +33,15 @@ Manager rules:
 - the workspace path is manager-owned and lives outside the source tree
 - stdout and stderr are written to a manager-owned log file
 - stdin remains attached because upstream MCP uses stdio
+
+## Runtime Resolution
+
+The manager now resolves JavaLens in this order:
+
+1. selected managed runtime version from the manager-owned tools cache
+2. project-specific local JAR fallback when the user explicitly chooses local mode
+
+The normal path is a managed runtime selected by version, not a hand-entered JAR path.
 
 ## Transport Decision
 
@@ -62,7 +71,7 @@ This is intentionally narrow and honest. It gives a reliable first vertical slic
 
 ## Stable Config Schema
 
-For Sprint 1, `projects.json` uses this schema shape:
+The persisted project file now uses a runtime-source shape rather than a raw JAR-path-only shape:
 
 ```json
 {
@@ -72,7 +81,10 @@ For Sprint 1, `projects.json` uses this schema shape:
       "id": "example-service-1713550000000",
       "name": "Example Service",
       "projectPath": "/path/to/java/project",
-      "javalensJarPath": "/path/to/javalens.jar",
+      "runtimeSource": {
+        "kind": "managed",
+        "version": "1.2.0"
+      },
       "workspaceDir": "/home/user/.cache/javalens-manager/workspaces/example-service-1713550000000"
     }
   ]
@@ -84,8 +96,10 @@ Field meanings:
 - `id`: stable manager-owned identifier
 - `name`: user-facing display name
 - `projectPath`: Java project root to auto-load into JavaLens
-- `javalensJarPath`: selected upstream runtime artifact
+- `runtimeSource`: either a managed runtime version or a local JAR fallback
 - `workspaceDir`: manager-owned Eclipse/JDT workspace path passed to `-data`
+
+Global manager settings are persisted separately in `settings.json`, including update policy and the default managed runtime version.
 
 ## Runtime-Owned Files
 

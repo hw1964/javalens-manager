@@ -35,17 +35,22 @@ Treat upstream `javalens-mcp` as an external runtime artifact.
 
 Recommended support order:
 
-1. user-provided local JAR path for early development
-2. pinned upstream release artifact selection in manager settings
-3. later, optional manager-assisted download/update flow
+1. manager-owned cached runtime downloaded from upstream releases
+2. pinned upstream release selection in manager settings
+3. user-provided local JAR path as an advanced fallback
 
-This keeps the first implementation simple while preserving a clean upgrade path.
+This keeps the normal path simple for users while preserving a clean fallback for development and troubleshooting.
 
 ## Versioning Rule
 
 The manager should record which `javalens-mcp` artifact each runtime uses.
 
 That version or artifact path should be stored in manager-owned configuration, not hidden inside project folders or mixed into application code. This makes upgrades, downgrades, and troubleshooting explicit.
+
+The manager should distinguish between:
+
+- managed runtime selection by version from the local cache
+- local JAR fallback selection for advanced/manual use
 
 ## Filesystem Layout
 
@@ -129,6 +134,15 @@ Recommended behavior:
 - keep a manager-owned copy of generated connection details
 - optionally write client-specific config files only when the user asks or enables it
 - never require manual editing inside project source trees as the primary control path
+
+## Update Policy
+
+The manager should persist an update policy for managed JavaLens runtimes:
+
+- `always`: keep the latest upstream release cached automatically
+- `ask`: detect updates and let the user approve them before download
+
+If no managed runtime is present yet, the manager may still bootstrap the latest release so the app has a usable default runtime.
 
 ## Update Strategy
 

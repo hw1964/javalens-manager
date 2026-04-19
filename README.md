@@ -6,7 +6,7 @@ Desktop manager for running and orchestrating JavaLens MCP servers across multip
 
 ## Status
 
-Early-stage project. Architecture and implementation are in progress.
+Early-stage project. The first runnable slice exists, and the current upgrade work focuses on managed JavaLens acquisition, persisted settings, and dropdown-driven runtime selection.
 
 ## Docs
 
@@ -17,6 +17,7 @@ Early-stage project. Architecture and implementation are in progress.
 - [`docs/javalens-management.md`](docs/javalens-management.md) - how upstream `javalens-mcp` is imported, versioned, and managed
 - [`docs/javalens-runtime-contract.md`](docs/javalens-runtime-contract.md) - exact Sprint 1 launch, transport, health, and config contract
 - [`docs/sprint-1-backlog.md`](docs/sprint-1-backlog.md) - first runnable-slice backlog and acceptance criteria
+- [`docs/sprint-2-backlog.md`](docs/sprint-2-backlog.md) - managed-runtime upgrade backlog, team split, and acceptance criteria
 - [`docs/tauri-bootstrap.md`](docs/tauri-bootstrap.md) - Sprint 0 and Sprint 1 bootstrap path for the Tauri app
 
 ## What It Is

@@ -1,14 +1,15 @@
-use crate::config::{display_path, AppPaths, ProjectRecord};
-use serde::Serialize;
+use crate::config::{display_path, AppPaths};
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fs::{self, OpenOptions},
+    path::Path,
     process::{Child, Command, Stdio},
     sync::Mutex,
     time::{Duration, Instant},
 };
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum RuntimePhase {
     Stopped,
@@ -17,7 +18,7 @@ pub enum RuntimePhase {
     Failed,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeStatusRecord {
     pub project_id: String,
@@ -26,7 +27,46 @@ pub struct RuntimeStatusRecord {
     pub pid: Option<u32>,
     pub workspace_dir: String,
     pub log_path: String,
+    pub runtime_label: String,
+    pub resolved_jar_path: String,
+    pub service_mode: String,
     pub detail: String,
+}
+
+impl RuntimeStatusRecord {
+    pub fn unresolved(
+        project_id: String,
+        workspace_dir: String,
+        runtime_label: String,
+        detail: String,
+    ) -> Self {
+        Self {
+            phase: RuntimePhase::Failed,
+            transport: "stdio".into(),
+            pid: None,
+            log_path: String::new(),
+            resolved_jar_path: String::new(),
+            service_mode: "manager-process".into(),
+            project_id,
+            workspace_dir,
+            runtime_label,
+            detail,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimeReference {
+    pub project_id: String,
+    pub workspace_dir: String,
+    pub runtime_label: String,
+    pub resolved_jar_path: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimeLaunchRequest {
+    pub project_path: String,
+    pub reference: RuntimeReference,
 }
 
 #[derive(Debug, Clone)]
@@ -51,27 +91,31 @@ pub struct RuntimeManager {
 
 impl RuntimeManager {
     pub fn new(paths: AppPaths) -> Self {
+        let snapshots = read_runtime_state(&paths.runtime_state_file).unwrap_or_default();
         Self {
             paths,
             handles: Mutex::new(HashMap::new()),
-            snapshots: Mutex::new(HashMap::new()),
+            snapshots: Mutex::new(snapshots),
         }
     }
 
-    pub fn start_runtime(&self, project: &ProjectRecord) -> Result<RuntimeStatusRecord, String> {
-        if let Some(status) = self.try_get_active_status(project)? {
+    pub fn start_runtime(
+        &self,
+        launch_request: &RuntimeLaunchRequest,
+    ) -> Result<RuntimeStatusRecord, String> {
+        if let Some(status) = self.try_get_active_status(&launch_request.reference)? {
             return Ok(status);
         }
 
         self.paths.ensure_dirs()?;
-        fs::create_dir_all(&project.workspace_dir).map_err(|error| {
+        fs::create_dir_all(&launch_request.reference.workspace_dir).map_err(|error| {
             format!(
                 "failed to create workspace dir {}: {error}",
-                project.workspace_dir
+                launch_request.reference.workspace_dir
             )
         })?;
 
-        let command_spec = self.command_spec_for(project);
+        let command_spec = self.command_spec_for(launch_request);
         let log_path = command_spec.log_path.clone();
         let log_file = OpenOptions::new()
             .create(true)
@@ -94,44 +138,45 @@ impl RuntimeManager {
 
         let child = command.spawn().map_err(|error| {
             format!(
-                "failed to launch JavaLens. Confirm Java, the JAR path, and workspace path are valid: {error}"
+                "failed to launch JavaLens. Confirm Java and the resolved runtime path are valid: {error}"
             )
         })?;
 
         let status = RuntimeStatusRecord {
-            project_id: project.id.clone(),
+            project_id: launch_request.reference.project_id.clone(),
             phase: RuntimePhase::Starting,
             transport: "stdio".into(),
             pid: Some(child.id()),
-            workspace_dir: project.workspace_dir.clone(),
+            workspace_dir: launch_request.reference.workspace_dir.clone(),
             log_path: log_path.clone(),
-            detail:
-                "Process launched. First slice uses process liveness; MCP health_check comes next."
-                    .into(),
+            runtime_label: launch_request.reference.runtime_label.clone(),
+            resolved_jar_path: launch_request.reference.resolved_jar_path.clone(),
+            service_mode: "manager-process".into(),
+            detail: "Process launched. Next slice can add semantic health probes.".into(),
         };
 
         self.handles.lock().expect("runtime mutex poisoned").insert(
-            project.id.clone(),
+            launch_request.reference.project_id.clone(),
             ManagedRuntime {
                 child,
                 started_at: Instant::now(),
                 log_path,
             },
         );
-        self.snapshots
-            .lock()
-            .expect("runtime snapshot mutex poisoned")
-            .insert(project.id.clone(), status.clone());
+        self.persist_snapshot(status.clone())?;
 
         Ok(status)
     }
 
-    pub fn stop_runtime(&self, project: &ProjectRecord) -> Result<RuntimeStatusRecord, String> {
+    pub fn stop_runtime(
+        &self,
+        reference: &RuntimeReference,
+    ) -> Result<RuntimeStatusRecord, String> {
         if let Some(mut handle) = self
             .handles
             .lock()
             .expect("runtime mutex poisoned")
-            .remove(&project.id)
+            .remove(&reference.project_id)
         {
             handle
                 .child
@@ -141,28 +186,27 @@ impl RuntimeManager {
         }
 
         let status = RuntimeStatusRecord {
-            project_id: project.id.clone(),
+            project_id: reference.project_id.clone(),
             phase: RuntimePhase::Stopped,
             transport: "stdio".into(),
             pid: None,
-            workspace_dir: project.workspace_dir.clone(),
-            log_path: self.default_log_path(project),
+            workspace_dir: reference.workspace_dir.clone(),
+            log_path: self.default_log_path(&reference.project_id),
+            runtime_label: reference.runtime_label.clone(),
+            resolved_jar_path: reference.resolved_jar_path.clone(),
+            service_mode: "manager-process".into(),
             detail: "Runtime stopped.".into(),
         };
 
-        self.snapshots
-            .lock()
-            .expect("runtime snapshot mutex poisoned")
-            .insert(project.id.clone(), status.clone());
-
+        self.persist_snapshot(status.clone())?;
         Ok(status)
     }
 
     pub fn get_runtime_status(
         &self,
-        project: &ProjectRecord,
+        reference: &RuntimeReference,
     ) -> Result<RuntimeStatusRecord, String> {
-        if let Some(status) = self.try_get_active_status(project)? {
+        if let Some(status) = self.try_get_active_status(reference)? {
             return Ok(status);
         }
 
@@ -170,38 +214,44 @@ impl RuntimeManager {
             .snapshots
             .lock()
             .expect("runtime snapshot mutex poisoned")
-            .get(&project.id)
+            .get(&reference.project_id)
             .cloned()
             .unwrap_or_else(|| RuntimeStatusRecord {
-                project_id: project.id.clone(),
+                project_id: reference.project_id.clone(),
                 phase: RuntimePhase::Stopped,
                 transport: "stdio".into(),
                 pid: None,
-                workspace_dir: project.workspace_dir.clone(),
-                log_path: self.default_log_path(project),
+                workspace_dir: reference.workspace_dir.clone(),
+                log_path: self.default_log_path(&reference.project_id),
+                runtime_label: reference.runtime_label.clone(),
+                resolved_jar_path: reference.resolved_jar_path.clone(),
+                service_mode: "manager-process".into(),
                 detail: "Runtime has not been started yet.".into(),
             }))
     }
 
-    pub fn command_spec_for(&self, project: &ProjectRecord) -> CommandSpec {
-        let log_path = self.default_log_path(project);
+    pub fn command_spec_for(&self, launch_request: &RuntimeLaunchRequest) -> CommandSpec {
+        let log_path = self.default_log_path(&launch_request.reference.project_id);
 
         CommandSpec {
             command: "java".into(),
             args: vec![
                 "-jar".into(),
-                project.javalens_jar_path.clone(),
+                launch_request.reference.resolved_jar_path.clone(),
                 "-data".into(),
-                project.workspace_dir.clone(),
+                launch_request.reference.workspace_dir.clone(),
             ],
-            env: vec![("JAVA_PROJECT_PATH".into(), project.project_path.clone())],
+            env: vec![(
+                "JAVA_PROJECT_PATH".into(),
+                launch_request.project_path.clone(),
+            )],
             log_path,
         }
     }
 
     fn try_get_active_status(
         &self,
-        project: &ProjectRecord,
+        reference: &RuntimeReference,
     ) -> Result<Option<RuntimeStatusRecord>, String> {
         let mut finished_status: Option<RuntimeStatusRecord> = None;
         let mut running_status: Option<RuntimeStatusRecord> = None;
@@ -209,7 +259,7 @@ impl RuntimeManager {
         {
             let mut handles = self.handles.lock().expect("runtime mutex poisoned");
 
-            if let Some(handle) = handles.get_mut(&project.id) {
+            if let Some(handle) = handles.get_mut(&reference.project_id) {
                 if let Some(exit_status) = handle
                     .child
                     .try_wait()
@@ -222,7 +272,7 @@ impl RuntimeManager {
                     };
 
                     finished_status = Some(RuntimeStatusRecord {
-                        project_id: project.id.clone(),
+                        project_id: reference.project_id.clone(),
                         phase: if exit_status.success() {
                             RuntimePhase::Stopped
                         } else {
@@ -230,8 +280,11 @@ impl RuntimeManager {
                         },
                         transport: "stdio".into(),
                         pid: None,
-                        workspace_dir: project.workspace_dir.clone(),
+                        workspace_dir: reference.workspace_dir.clone(),
                         log_path: handle.log_path.clone(),
+                        runtime_label: reference.runtime_label.clone(),
+                        resolved_jar_path: reference.resolved_jar_path.clone(),
+                        service_mode: "manager-process".into(),
                         detail,
                     });
                 } else {
@@ -242,14 +295,17 @@ impl RuntimeManager {
                     };
 
                     running_status = Some(RuntimeStatusRecord {
-                        project_id: project.id.clone(),
+                        project_id: reference.project_id.clone(),
                         phase,
                         transport: "stdio".into(),
                         pid: Some(handle.child.id()),
-                        workspace_dir: project.workspace_dir.clone(),
+                        workspace_dir: reference.workspace_dir.clone(),
                         log_path: handle.log_path.clone(),
+                        runtime_label: reference.runtime_label.clone(),
+                        resolved_jar_path: reference.resolved_jar_path.clone(),
+                        service_mode: "manager-process".into(),
                         detail:
-                            "Process is alive. MCP health_check will be added after the first slice."
+                            "Process is alive. Upstream health_check is still deferred to a later slice."
                                 .into(),
                     });
                 }
@@ -260,28 +316,60 @@ impl RuntimeManager {
             self.handles
                 .lock()
                 .expect("runtime mutex poisoned")
-                .remove(&project.id);
-            self.snapshots
-                .lock()
-                .expect("runtime snapshot mutex poisoned")
-                .insert(project.id.clone(), status.clone());
+                .remove(&reference.project_id);
+            self.persist_snapshot(status.clone())?;
             return Ok(Some(status));
         }
 
         if let Some(status) = running_status {
-            self.snapshots
-                .lock()
-                .expect("runtime snapshot mutex poisoned")
-                .insert(project.id.clone(), status.clone());
+            self.persist_snapshot(status.clone())?;
             return Ok(Some(status));
         }
 
         Ok(None)
     }
 
-    fn default_log_path(&self, project: &ProjectRecord) -> String {
-        display_path(&self.paths.log_dir.join(format!("{}.log", project.id)))
+    fn persist_snapshot(&self, status: RuntimeStatusRecord) -> Result<(), String> {
+        let snapshots = {
+            let mut snapshots = self
+                .snapshots
+                .lock()
+                .expect("runtime snapshot mutex poisoned");
+            snapshots.insert(status.project_id.clone(), status);
+            snapshots.clone()
+        };
+
+        write_runtime_state(&self.paths.runtime_state_file, &snapshots)
     }
+
+    fn default_log_path(&self, project_id: &str) -> String {
+        display_path(&self.paths.log_dir.join(format!("{project_id}.log")))
+    }
+}
+
+fn read_runtime_state(path: &Path) -> Result<HashMap<String, RuntimeStatusRecord>, String> {
+    if !path.exists() {
+        return Ok(HashMap::new());
+    }
+
+    let contents = fs::read_to_string(path)
+        .map_err(|error| format!("failed to read runtime state {}: {error}", path.display()))?;
+    serde_json::from_str(&contents)
+        .map_err(|error| format!("failed to parse runtime state {}: {error}", path.display()))
+}
+
+fn write_runtime_state(
+    path: &Path,
+    snapshots: &HashMap<String, RuntimeStatusRecord>,
+) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(snapshots).map_err(|error| {
+        format!(
+            "failed to serialize runtime state {}: {error}",
+            path.display()
+        )
+    })?;
+    fs::write(path, format!("{json}\n"))
+        .map_err(|error| format!("failed to write runtime state {}: {error}", path.display()))
 }
 
 #[cfg(test)]
@@ -295,28 +383,33 @@ mod tests {
             config_dir: PathBuf::from("/tmp/javalens-manager/config"),
             state_dir: PathBuf::from("/tmp/javalens-manager/state"),
             cache_dir: PathBuf::from("/tmp/javalens-manager/cache"),
-            config_file: PathBuf::from("/tmp/javalens-manager/config/projects.json"),
+            projects_file: PathBuf::from("/tmp/javalens-manager/config/projects.json"),
+            settings_file: PathBuf::from("/tmp/javalens-manager/config/settings.json"),
+            runtime_state_file: PathBuf::from("/tmp/javalens-manager/state/runtime-state.json"),
             workspace_root: PathBuf::from("/tmp/javalens-manager/cache/workspaces"),
             log_dir: PathBuf::from("/tmp/javalens-manager/state/logs"),
+            tools_dir: PathBuf::from("/tmp/javalens-manager/cache/tools/javalens"),
         }
     }
 
-    fn fake_project() -> ProjectRecord {
-        ProjectRecord {
-            id: "example-service-1".into(),
-            name: "Example Service".into(),
+    fn fake_launch_request() -> RuntimeLaunchRequest {
+        RuntimeLaunchRequest {
             project_path: "/projects/example-service".into(),
-            javalens_jar_path: "/tools/javalens/javalens.jar".into(),
-            workspace_dir: "/cache/javalens/example-service".into(),
+            reference: RuntimeReference {
+                project_id: "example-service-1".into(),
+                workspace_dir: "/cache/javalens/example-service".into(),
+                runtime_label: "Managed JavaLens 1.2.0".into(),
+                resolved_jar_path: "/tools/javalens/javalens.jar".into(),
+            },
         }
     }
 
     #[test]
     fn command_spec_matches_documented_launch_contract() {
         let manager = RuntimeManager::new(fake_paths());
-        let project = fake_project();
+        let launch_request = fake_launch_request();
 
-        let spec = manager.command_spec_for(&project);
+        let spec = manager.command_spec_for(&launch_request);
 
         assert_eq!(spec.command, "java");
         assert_eq!(
@@ -336,5 +429,19 @@ mod tests {
             )]
         );
         assert!(spec.log_path.ends_with("example-service-1.log"));
+    }
+
+    #[test]
+    fn unresolved_runtime_status_carries_runtime_label() {
+        let status = RuntimeStatusRecord::unresolved(
+            "project-1".into(),
+            "/tmp/workspace".into(),
+            "Managed JavaLens 1.2.0".into(),
+            "Missing runtime".into(),
+        );
+
+        assert!(matches!(status.phase, RuntimePhase::Failed));
+        assert_eq!(status.runtime_label, "Managed JavaLens 1.2.0");
+        assert_eq!(status.detail, "Missing runtime");
     }
 }

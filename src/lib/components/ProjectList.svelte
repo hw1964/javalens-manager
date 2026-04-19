@@ -1,5 +1,9 @@
 <script lang="ts">
-  import type { ProjectRecord, RuntimeStatusRecord } from "../api/tauri";
+  import {
+    describeRuntimeSource,
+    type ProjectRecord,
+    type RuntimeStatusRecord
+  } from "../api/tauri";
 
   export let projects: ProjectRecord[] = [];
   export let runtimeStatuses: Record<string, RuntimeStatusRecord> = {};
@@ -15,12 +19,14 @@
 <section class="panel stack">
   <div>
     <h2>Managed Projects</h2>
-    <p class="muted">Each entry maps to one JavaLens runtime over stdio.</p>
+    <p class="muted">
+      Each entry maps to one JavaLens runtime over stdio, resolved through the manager service.
+    </p>
   </div>
 
   {#if projects.length === 0}
     <div class="empty-state">
-      No projects registered yet. Add one on the left to start the first lifecycle slice.
+      No projects registered yet. Configure JavaLens first, then add a Java project on the left.
     </div>
   {:else}
     <div class="stack list">
@@ -37,6 +43,7 @@
 
           <div class="meta">
             <span>Transport: {status?.transport ?? "stdio"}</span>
+            <span>Runtime: {describeRuntimeSource(project.runtimeSource)}</span>
             <span>Workspace: {project.workspaceDir}</span>
           </div>
 
