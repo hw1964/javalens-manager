@@ -41,6 +41,12 @@ button {
   gap: 1rem;
 }
 
+.dashboard-shell-mode {
+  height: 100vh;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
 .layout {
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
@@ -49,22 +55,18 @@ button {
 }
 
 .dashboard-layout {
-  --dashboard-panel-height: clamp(30rem, calc(100vh - 13.5rem), 58rem);
-  align-items: start;
+  align-items: stretch;
+  height: 100%;
 }
 
 .dashboard-column {
   min-height: 0;
-  height: var(--dashboard-panel-height);
+  height: 100%;
 }
 
 .dashboard-column > .panel {
   height: 100%;
   min-height: 0;
-  overflow: hidden;
-}
-
-.dashboard-column:first-child > .panel {
   overflow: auto;
 }
 
@@ -84,6 +86,19 @@ button {
 .hero {
   display: grid;
   gap: 0.8rem;
+}
+
+.dashboard-main {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  gap: 0.75rem;
+}
+
+.dashboard-content {
+  min-height: 0;
+  overflow: hidden;
+  padding-right: 0.15rem;
 }
 
 .header-content {
@@ -274,7 +289,7 @@ button:disabled {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 0.35rem;
+  padding-right: 0.25rem;
   align-content: start;
 }
 
@@ -526,6 +541,14 @@ button:disabled {
   min-height: 7.5rem;
 }
 
+.dashboard-footer-panel {
+  position: relative;
+  z-index: 10;
+  background: rgba(11, 16, 32, 0.96);
+  overflow: hidden;
+  padding: 0.58rem 0.82rem;
+}
+
 .detail-header {
   display: flex;
   justify-content: space-between;
@@ -535,12 +558,21 @@ button:disabled {
 }
 
 .detail-grid {
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: minmax(120px, 0.9fr) minmax(220px, 2fr) minmax(90px, 0.7fr) minmax(100px, 0.8fr) minmax(220px, 2.2fr);
+  gap: 0.35rem 0.72rem;
+  align-items: start;
 }
 
 dd {
   margin: 0;
   color: #f8fafc;
+  font-size: 0.9rem;
+  line-height: 1.2;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .empty-state {
@@ -620,8 +652,19 @@ dd {
 }
 
 @media (max-width: 960px) {
+  .dashboard-shell-mode {
+    height: auto;
+    grid-template-rows: auto;
+    overflow: visible;
+  }
+
   .layout {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-content {
+    min-height: 0;
+    overflow: visible;
   }
 
   .dashboard-column {
@@ -631,6 +674,10 @@ dd {
   .dashboard-column > .panel {
     height: auto;
     overflow: auto;
+  }
+
+  .detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .project-list-header {

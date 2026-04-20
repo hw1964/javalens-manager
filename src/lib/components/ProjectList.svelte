@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { afterUpdate } from "svelte";
   import type {
     ProjectRecord,
     RuntimeStatusRecord
@@ -22,6 +23,17 @@
 
   let draftPorts: Record<string, string> = {};
   let portInputErrors: Record<string, string> = {};
+  let rowRefs: Record<string, HTMLElement> = {};
+  let lastAutoScrolledSelection: string | undefined;
+
+  function registerRow(node: HTMLElement, projectId: string) {
+    rowRefs[projectId] = node;
+    return {
+      destroy() {
+        delete rowRefs[projectId];
+      }
+    };
+  }
 
   function handleDeleteAll() {
     if (confirm("Delete all projects and stop all runtimes?")) {
@@ -95,6 +107,18 @@
       : aggregatePhase === "stopped"
         ? "all stopped"
         : "mixed";
+
+  afterUpdate(() => {
+    if (!selectedProjectId || selectedProjectId === lastAutoScrolledSelection) {
+      return;
+    }
+    const target = rowRefs[selectedProjectId];
+    if (!target) {
+      return;
+    }
+    target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    lastAutoScrolledSelection = selectedProjectId;
+  });
 </script>
 
 <section class="panel stack project-list-panel">
@@ -130,7 +154,11 @@
     <div class="stack list project-list-scroll">
       {#each projects as project}
         {@const status = runtimeStatuses[project.id]}
-        <article class:selected={project.id === selectedProjectId} class="project-card">
+        <article
+          class:selected={project.id === selectedProjectId}
+          class="project-card"
+          use:registerRow={project.id}
+        >
           <div class="project-row">
             <div class="project-left">
               <button class="select" on:click={() => onSelect(project.id)} type="button">

@@ -43,7 +43,7 @@
   <title>javalens-manager</title>
 </svelte:head>
 
-<main class="app-shell">
+<main class={`app-shell ${currentView === "dashboard" ? "dashboard-shell-mode" : ""}`}>
   <header class="hero panel">
     <div class="header-content">
       <div>
@@ -77,106 +77,87 @@
   {/if}
 
   {#if currentView === 'dashboard'}
-    <section class="layout dashboard-layout">
-      <div class="dashboard-column">
-        <ProjectForm
-          disabled={$appStore.isBusy}
-          suggestedPort={$appStore.suggestedPort}
-          on:submit={handleProjectSubmit}
-          on:imported={() => appStore.load()}
-        />
-      </div>
+    <section class="dashboard-main">
+      <section class="dashboard-content">
+        <section class="layout dashboard-layout">
+          <div class="dashboard-column">
+            <ProjectForm
+              disabled={$appStore.isBusy}
+              suggestedPort={$appStore.suggestedPort}
+              on:submit={handleProjectSubmit}
+              on:imported={() => appStore.load()}
+            />
+          </div>
 
-      <div class="dashboard-column">
-        <ProjectList
-          disabled={$appStore.isBusy}
-          onRefresh={(projectId) => appStore.refreshProjectStatus(projectId)}
-          onSelect={(projectId) => appStore.selectProject(projectId)}
-          onStart={(projectId) => appStore.startProject(projectId)}
-          onStartAll={() => appStore.startAllProjects()}
-          onStop={(projectId) => appStore.stopProject(projectId)}
-          onStopAll={() => appStore.stopAllProjects()}
-          onDelete={(projectId) => appStore.deleteProjectEntry(projectId)}
-          onDeleteAll={() => appStore.deleteAllProjectEntries()}
-          onUpdatePort={(projectId, assignedPort) => appStore.updateProjectPortEntry(projectId, assignedPort)}
-          projects={$appStore.projects ?? []}
-          projectErrors={$appStore.projectErrors ?? {}}
-          runtimeStatuses={$appStore.runtimeStatuses ?? {}}
-          selectedProjectId={$appStore.selectedProjectId}
-        />
-      </div>
-    </section>
-
-    {#if ($appStore.projects ?? []).length > 0}
-      <section class="panel detail-panel">
-        <div class="detail-header">
-          <h2>Selected Project Status</h2>
-          {#if selectedProject}
-            <button
-              aria-label={`Refresh status for ${selectedProject.name}`}
-              class="icon-refresh"
-              on:click={() => appStore.refreshProjectStatus(selectedProject.id)}
-              title="Refresh status"
-              type="button"
-            >
-              ↻
-            </button>
-          {/if}
-        </div>
-
-        {#if selectedProject && selectedStatus}
-          <p class="muted">Status and process details for the currently selected project.</p>
-          <dl class="detail-grid">
-            <div>
-              <dt>Name</dt>
-              <dd>{selectedProject.name}</dd>
-            </div>
-            <div>
-              <dt>Phase</dt>
-              <dd>{selectedStatus.phase}</dd>
-            </div>
-            <div>
-              <dt>Project path</dt>
-              <dd>{selectedProject.projectPath}</dd>
-            </div>
-            <div>
-              <dt>Assigned port</dt>
-              <dd>{selectedProject.assignedPort}</dd>
-            </div>
-            <div>
-              <dt>Service</dt>
-              <dd>{selectedStatus.runtimeLabel}</dd>
-            </div>
-            <div>
-              <dt>Resolved JAR</dt>
-              <dd>{selectedStatus.resolvedJarPath || "Not resolved yet"}</dd>
-            </div>
-            <div>
-              <dt>Workspace</dt>
-              <dd>{selectedStatus.workspaceDir}</dd>
-            </div>
-            <div>
-              <dt>Log file</dt>
-              <dd>{selectedStatus.logPath || "Will be created on first launch"}</dd>
-            </div>
-            <div>
-              <dt>PID</dt>
-              <dd>{selectedStatus.pid ?? "Not running"}</dd>
-            </div>
-            <div>
-              <dt>Service mode</dt>
-              <dd>{selectedStatus.serviceMode}</dd>
-            </div>
-            <div>
-              <dt>Health detail</dt>
-              <dd>{selectedStatus.detail}</dd>
-            </div>
-          </dl>
-        {:else}
-          <p class="muted">Choose a project to inspect runtime and health details.</p>
-        {/if}
+          <div class="dashboard-column">
+            <ProjectList
+              disabled={$appStore.isBusy}
+              onRefresh={(projectId) => appStore.refreshProjectStatus(projectId)}
+              onSelect={(projectId) => appStore.selectProject(projectId)}
+              onStart={(projectId) => appStore.startProject(projectId)}
+              onStartAll={() => appStore.startAllProjects()}
+              onStop={(projectId) => appStore.stopProject(projectId)}
+              onStopAll={() => appStore.stopAllProjects()}
+              onDelete={(projectId) => appStore.deleteProjectEntry(projectId)}
+              onDeleteAll={() => appStore.deleteAllProjectEntries()}
+              onUpdatePort={(projectId, assignedPort) => appStore.updateProjectPortEntry(projectId, assignedPort)}
+              projects={$appStore.projects ?? []}
+              projectErrors={$appStore.projectErrors ?? {}}
+              runtimeStatuses={$appStore.runtimeStatuses ?? {}}
+              selectedProjectId={$appStore.selectedProjectId}
+            />
+          </div>
+        </section>
       </section>
-    {/if}
+
+      {#if ($appStore.projects ?? []).length > 0}
+        <section class="panel detail-panel dashboard-footer-panel">
+          <div class="detail-header">
+            <h2>Selected Project Status</h2>
+            {#if selectedProject}
+              <button
+                aria-label={`Refresh status for ${selectedProject.name}`}
+                class="icon-refresh"
+                on:click={() => appStore.refreshProjectStatus(selectedProject.id)}
+                title="Refresh status"
+                type="button"
+              >
+                ↻
+              </button>
+            {/if}
+          </div>
+
+          {#if selectedProject && selectedStatus}
+            <dl class="detail-grid">
+              <div>
+                <dt>Name</dt>
+                <dd>{selectedProject.name}</dd>
+              </div>
+              <div>
+                <dt>Project path</dt>
+                <dd title={selectedProject.projectPath}>{selectedProject.projectPath}</dd>
+              </div>
+              <div>
+                <dt>Assigned port</dt>
+                <dd>{selectedProject.assignedPort}</dd>
+              </div>
+              <div>
+                <dt>PID</dt>
+                <dd>{selectedStatus.pid ?? "Not running"}</dd>
+              </div>
+              <div>
+                <dt>Phase / Health</dt>
+                <dd title={selectedStatus.detail}>
+                  {selectedStatus.phase} - {selectedStatus.detail}
+                </dd>
+              </div>
+            </dl>
+          {:else}
+            <p class="muted">Choose a project to inspect runtime and health details.</p>
+          {/if}
+        </section>
+      {/if}
+    </section>
   {:else if currentView === 'settings'}
     <section class="layout">
       <div class="stack">
