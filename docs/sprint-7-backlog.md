@@ -39,6 +39,7 @@ Acceptance criteria:
 - Allow selecting target clients and output paths.
 - Provide "Generate" and "Regenerate" actions with success/error feedback.
 - Show last generation timestamp and per-client status.
+- Reuse Sprint 6.3 Settings metadata (auto-detected defaults, manual overrides, merge/backup policy flags) as input; deploy execution remains owned here in Sprint 7.
 
 ### 4. Validation and Safety
 

@@ -254,47 +254,27 @@
       {/if}
     </section>
   {:else if currentView === 'settings'}
-    <section class="layout">
-      <div class="stack">
-        <RuntimeSettings
-          disabled={$appStore.isBusy}
-          installedRuntime={$appStore.installedRuntime}
-          releaseStatus={$appStore.releaseStatus}
-          settings={$appStore.settings}
-          on:download={() => appStore.downloadLatestRuntime()}
-          on:refresh={() => appStore.load()}
-          on:save={handleSettingsSave}
-        />
-      </div>
-
-      <div class="panel stack">
-        <details class="advanced-toggle">
-          <summary>Diagnostics &amp; paths</summary>
-          <div class="stack advanced-content">
-            <p class="muted">Diagnostic paths and manager configuration locations.</p>
-            {#if $appStore.bootstrap}
-              <div class="bootstrap-grid">
-                <div>
-                  <span class="label">Projects</span>
-                  <strong>{$appStore.bootstrap.projectsFile}</strong>
-                </div>
-                <div>
-                  <span class="label">Settings</span>
-                  <strong>{$appStore.bootstrap.settingsFile}</strong>
-                </div>
-                <div>
-                  <span class="label">Data root</span>
-                  <strong>{$appStore.bootstrap.defaultDataRoot}</strong>
-                </div>
-                <div>
-                  <span class="label">Health</span>
-                  <strong>{$appStore.bootstrap.healthStrategy}</strong>
-                </div>
-              </div>
-            {/if}
-          </div>
-        </details>
-      </div>
+    <section class="stack">
+      <RuntimeSettings
+        bootstrap={$appStore.bootstrap}
+        disabled={$appStore.isBusy}
+        installedRuntime={$appStore.installedRuntime}
+        lastCleanupSummary={$appStore.lastCleanupSummary}
+        lastServiceProbe={$appStore.lastServiceProbe}
+        releaseStatus={$appStore.releaseStatus}
+        serviceProbeBusy={$appStore.serviceProbeBusy ?? false}
+        serviceProbeError={$appStore.serviceProbeError}
+        settings={$appStore.settings}
+        on:cleanGeneratedData={() => appStore.cleanAllGeneratedData()}
+        on:cleanLogs={() => appStore.cleanAllLogs()}
+        on:cleanWorkspaces={() => appStore.cleanAllWorkspaces()}
+        on:clearCleanupSummary={() => appStore.clearCleanupSummary()}
+        on:clearServiceProbeError={() => appStore.clearServiceProbeError()}
+        on:download={() => appStore.downloadLatestRuntime()}
+        on:probeServices={() => appStore.probeServices()}
+        on:refresh={() => appStore.load()}
+        on:save={handleSettingsSave}
+      />
     </section>
   {/if}
 </main>

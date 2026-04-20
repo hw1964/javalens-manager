@@ -1,6 +1,4 @@
-use crate::config::{
-    current_timestamp_string, display_path, ManagerSettings, UpdatePolicy,
-};
+use crate::config::{current_timestamp_string, display_path, ManagerSettings, UpdatePolicy};
 use flate2::read::GzDecoder;
 use reqwest::blocking::Client;
 use semver::Version;
@@ -181,16 +179,16 @@ impl ReleaseManager {
     ) -> Result<Option<ManagedRuntimeRecord>, String> {
         let tools_dir = settings.tools_dir();
         fs::create_dir_all(&tools_dir).map_err(|error| {
-            format!("failed to create tools dir {}: {error}", tools_dir.display())
+            format!(
+                "failed to create tools dir {}: {error}",
+                tools_dir.display()
+            )
         })?;
 
         let mut runtimes = Vec::new();
-        for entry in fs::read_dir(&tools_dir).map_err(|error| {
-            format!(
-                "failed to read tools dir {}: {error}",
-                tools_dir.display()
-            )
-        })? {
+        for entry in fs::read_dir(&tools_dir)
+            .map_err(|error| format!("failed to read tools dir {}: {error}", tools_dir.display()))?
+        {
             let entry = entry
                 .map_err(|error| format!("failed to inspect managed runtime entry: {error}"))?;
             let manifest_path = entry.path().join("runtime.json");
@@ -258,10 +256,17 @@ impl ReleaseManager {
         })
     }
 
-    fn install_release(&self, release: &RemoteRelease, settings: &ManagerSettings) -> Result<ManagedRuntimeRecord, String> {
+    fn install_release(
+        &self,
+        release: &RemoteRelease,
+        settings: &ManagerSettings,
+    ) -> Result<ManagedRuntimeRecord, String> {
         let tools_dir = settings.tools_dir();
         fs::create_dir_all(&tools_dir).map_err(|error| {
-            format!("failed to create tools dir {}: {error}", tools_dir.display())
+            format!(
+                "failed to create tools dir {}: {error}",
+                tools_dir.display()
+            )
         })?;
         let target_dir = tools_dir.join(format!("javalens-{}", release.version));
         let manifest_path = target_dir.join("runtime.json");
@@ -360,7 +365,7 @@ impl ReleaseManager {
         }
 
         let jar_relative_path = find_relative_jar_path(&extract_root)?;
-        
+
         // Delete any existing javalens-* directories to enforce a single cached runtime
         if let Ok(entries) = fs::read_dir(&tools_dir) {
             for entry in entries.flatten() {
@@ -426,8 +431,8 @@ impl ReleaseManager {
         }
 
         if let Some(release) = release {
-            let latest_installed = installed
-                .map_or(false, |runtime| runtime.version == release.version);
+            let latest_installed =
+                installed.map_or(false, |runtime| runtime.version == release.version);
             let update_available = !latest_installed;
             let kind = if installed.is_none() {
                 ReleaseStatusKind::Missing

@@ -55,6 +55,59 @@ fn default_port_range_end() -> u16 {
     11199
 }
 
+fn default_use_system_tray() -> bool {
+    true
+}
+
+fn default_mcp_merge_mode() -> McpMergeMode {
+    McpMergeMode::SafeMerge
+}
+
+fn default_mcp_backup_before_write() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum McpMergeMode {
+    SafeMerge,
+    ReplaceManagedSection,
+}
+
+impl Default for McpMergeMode {
+    fn default() -> Self {
+        McpMergeMode::SafeMerge
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct McpClientPathEntry {
+    #[serde(default)]
+    pub auto_detected_path: Option<String>,
+    #[serde(default)]
+    pub manual_override_path: Option<String>,
+    #[serde(default)]
+    pub effective_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct McpClientPaths {
+    #[serde(default)]
+    pub cursor: McpClientPathEntry,
+    #[serde(default)]
+    pub claude: McpClientPathEntry,
+    #[serde(default)]
+    pub antigravity: McpClientPathEntry,
+    #[serde(default)]
+    pub intellij: McpClientPathEntry,
+}
+
+fn default_mcp_client_paths() -> McpClientPaths {
+    detect_default_mcp_client_paths()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagerSettings {
@@ -70,6 +123,14 @@ pub struct ManagerSettings {
     pub port_range_start: u16,
     #[serde(default = "default_port_range_end")]
     pub port_range_end: u16,
+    #[serde(default = "default_use_system_tray")]
+    pub use_system_tray: bool,
+    #[serde(default = "default_mcp_client_paths")]
+    pub mcp_client_paths: McpClientPaths,
+    #[serde(default = "default_mcp_merge_mode")]
+    pub mcp_merge_mode: McpMergeMode,
+    #[serde(default = "default_mcp_backup_before_write")]
+    pub mcp_backup_before_write: bool,
     pub last_release_check: Option<String>,
     pub last_seen_latest_version: Option<String>,
 }
@@ -85,13 +146,19 @@ impl ManagerSettings {
             global_runtime_source: RuntimeSource::Managed,
             port_range_start: default_port_range_start(),
             port_range_end: default_port_range_end(),
+            use_system_tray: default_use_system_tray(),
+            mcp_client_paths: detect_default_mcp_client_paths(),
+            mcp_merge_mode: default_mcp_merge_mode(),
+            mcp_backup_before_write: default_mcp_backup_before_write(),
             last_release_check: None,
             last_seen_latest_version: None,
         }
     }
 
     pub fn tools_dir(&self) -> PathBuf {
-        PathBuf::from(&self.data_root).join("tools").join("javalens")
+        PathBuf::from(&self.data_root)
+            .join("tools")
+            .join("javalens")
     }
 
     pub fn workspace_root(&self) -> PathBuf {
@@ -141,6 +208,10 @@ pub struct UpdateSettingsInput {
     pub global_runtime_source: RuntimeSource,
     pub port_range_start: u16,
     pub port_range_end: u16,
+    pub use_system_tray: bool,
+    pub mcp_client_paths: McpClientPaths,
+    pub mcp_merge_mode: McpMergeMode,
+    pub mcp_backup_before_write: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -331,7 +402,11 @@ impl ConfigStore {
         Ok(project)
     }
 
-    pub fn update_project_port(&self, project_id: &str, assigned_port: u16) -> Result<ProjectRecord, String> {
+    pub fn update_project_port(
+        &self,
+        project_id: &str,
+        assigned_port: u16,
+    ) -> Result<ProjectRecord, String> {
         let mut projects = self.projects.lock().expect("projects mutex poisoned");
         let project = projects
             .projects
@@ -389,6 +464,10 @@ impl ConfigStore {
         validate_port_range(input.port_range_start, input.port_range_end)?;
         settings.port_range_start = input.port_range_start;
         settings.port_range_end = input.port_range_end;
+        settings.use_system_tray = input.use_system_tray;
+        settings.mcp_client_paths = sanitize_mcp_client_paths(input.mcp_client_paths);
+        settings.mcp_merge_mode = input.mcp_merge_mode;
+        settings.mcp_backup_before_write = input.mcp_backup_before_write;
 
         write_json(&self.paths.settings_file, &*settings)?;
         Ok(settings.clone())
@@ -467,7 +546,99 @@ fn read_settings(path: &Path, paths: &AppPaths) -> Result<ManagerSettings, Strin
         settings.port_range_start = default_port_range_start();
         settings.port_range_end = default_port_range_end();
     }
+    settings.mcp_client_paths = merge_detected_mcp_paths(settings.mcp_client_paths);
     Ok(settings)
+}
+
+fn detect_default_mcp_client_paths() -> McpClientPaths {
+    let home = dirs::home_dir();
+    let detect = |candidates: &[PathBuf]| -> Option<String> {
+        candidates
+            .iter()
+            .find(|path| path.exists())
+            .map(|path| display_path(path))
+            .or_else(|| candidates.first().map(|path| display_path(path)))
+    };
+
+    let build = |parts: &[&str]| -> Option<PathBuf> {
+        home.as_ref()
+            .map(|h| parts.iter().fold(h.clone(), |acc, part| acc.join(part)))
+    };
+
+    let cursor_candidates: Vec<PathBuf> = [
+        [".cursor", "mcp.json"].as_slice(),
+        [".config", "Cursor", "mcp.json"].as_slice(),
+    ]
+    .iter()
+    .filter_map(|parts| build(parts))
+    .collect();
+
+    let claude_candidates: Vec<PathBuf> = [
+        [".claude", "mcp.json"].as_slice(),
+        [".claude.json"].as_slice(),
+    ]
+    .iter()
+    .filter_map(|parts| build(parts))
+    .collect();
+
+    let antigravity_candidates: Vec<PathBuf> = [
+        [".antigravity", "mcp.json"].as_slice(),
+        [".config", "antigravity", "mcp.json"].as_slice(),
+    ]
+    .iter()
+    .filter_map(|parts| build(parts))
+    .collect();
+
+    let intellij_candidates: Vec<PathBuf> = [
+        [".config", "JetBrains", "IntelliJIdea", "mcp.json"].as_slice(),
+        [".IntelliJIdea", "config", "options", "mcp.json"].as_slice(),
+    ]
+    .iter()
+    .filter_map(|parts| build(parts))
+    .collect();
+
+    let make_entry = |candidates: &[PathBuf]| McpClientPathEntry {
+        auto_detected_path: detect(candidates),
+        manual_override_path: None,
+        effective_path: detect(candidates),
+    };
+
+    McpClientPaths {
+        cursor: make_entry(&cursor_candidates),
+        claude: make_entry(&claude_candidates),
+        antigravity: make_entry(&antigravity_candidates),
+        intellij: make_entry(&intellij_candidates),
+    }
+}
+
+fn merge_detected_mcp_paths(paths: McpClientPaths) -> McpClientPaths {
+    let defaults = detect_default_mcp_client_paths();
+    McpClientPaths {
+        cursor: merge_mcp_path_entry(paths.cursor, defaults.cursor),
+        claude: merge_mcp_path_entry(paths.claude, defaults.claude),
+        antigravity: merge_mcp_path_entry(paths.antigravity, defaults.antigravity),
+        intellij: merge_mcp_path_entry(paths.intellij, defaults.intellij),
+    }
+}
+
+fn merge_mcp_path_entry(
+    mut current: McpClientPathEntry,
+    detected: McpClientPathEntry,
+) -> McpClientPathEntry {
+    current.auto_detected_path = detected.auto_detected_path;
+    let manual = current
+        .manual_override_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+    current.manual_override_path = manual.clone();
+    current.effective_path = manual.or_else(|| current.auto_detected_path.clone());
+    current
+}
+
+fn sanitize_mcp_client_paths(paths: McpClientPaths) -> McpClientPaths {
+    merge_detected_mcp_paths(paths)
 }
 
 fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {

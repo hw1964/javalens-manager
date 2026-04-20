@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type RuntimePhase = "stopped" | "starting" | "running" | "failed";
 export type UpdatePolicy = "always" | "ask";
+export type McpMergeMode = "safeMerge" | "replaceManagedSection";
 export type ReleaseStatusKind =
   | "ready"
   | "missing"
@@ -31,8 +32,25 @@ export interface ManagerSettings {
   globalRuntimeSource: RuntimeSource;
   portRangeStart: number;
   portRangeEnd: number;
+  useSystemTray: boolean;
+  mcpClientPaths: McpClientPaths;
+  mcpMergeMode: McpMergeMode;
+  mcpBackupBeforeWrite: boolean;
   lastReleaseCheck?: string | null;
   lastSeenLatestVersion?: string | null;
+}
+
+export interface McpClientPathEntry {
+  autoDetectedPath?: string | null;
+  manualOverridePath?: string | null;
+  effectivePath?: string | null;
+}
+
+export interface McpClientPaths {
+  cursor: McpClientPathEntry;
+  claude: McpClientPathEntry;
+  antigravity: McpClientPathEntry;
+  intellij: McpClientPathEntry;
 }
 
 export type RuntimeSource =
@@ -64,6 +82,10 @@ export interface UpdateSettingsInput {
   globalRuntimeSource: RuntimeSource;
   portRangeStart: number;
   portRangeEnd: number;
+  useSystemTray: boolean;
+  mcpClientPaths: McpClientPaths;
+  mcpMergeMode: McpMergeMode;
+  mcpBackupBeforeWrite: boolean;
 }
 
 export interface ManagedRuntimeRecord {
@@ -105,6 +127,34 @@ export interface ManagerDashboard {
   projects: ProjectRecord[];
   runtimeStatuses: Record<string, RuntimeStatusRecord>;
   suggestedPort?: number | null;
+  servicesInventory: ServicesInventory;
+}
+
+export interface ServicesInventory {
+  available: boolean;
+  services: string[];
+  detail: string;
+}
+
+export interface CleanupSummary {
+  target: string;
+  deletedFiles: number;
+  deletedDirs: number;
+  failedPaths: string[];
+  detail: string;
+}
+
+export interface ServiceProbeResult {
+  ok: boolean;
+  services: ProbeServiceEntry[];
+  detail: string;
+  durationMs: number;
+  rawProtocolError?: string | null;
+}
+
+export interface ProbeServiceEntry {
+  name: string;
+  description?: string | null;
 }
 
 export interface UpdateProjectPortInput {
@@ -186,4 +236,24 @@ export function stopRuntime(projectId: string): Promise<RuntimeStatusRecord> {
 
 export function getRuntimeStatus(projectId: string): Promise<RuntimeStatusRecord> {
   return invoke("get_runtime_status", { projectId });
+}
+
+export function getServicesInventory(): Promise<ServicesInventory> {
+  return invoke("get_services_inventory");
+}
+
+export function cleanLogs(): Promise<CleanupSummary> {
+  return invoke("clean_logs");
+}
+
+export function cleanWorkspaces(): Promise<CleanupSummary> {
+  return invoke("clean_workspaces");
+}
+
+export function cleanGeneratedData(): Promise<CleanupSummary> {
+  return invoke("clean_generated_data");
+}
+
+export function probeServices(): Promise<ServiceProbeResult> {
+  return invoke("probe_services");
 }

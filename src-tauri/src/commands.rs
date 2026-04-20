@@ -1,7 +1,8 @@
 use crate::{
     config::{AddProjectInput, ProjectRecord, UpdateSettingsInput},
     manager_service::{
-        ManagerDashboard, UpdateProjectPortInput, WorkspaceImportInput, WorkspaceImportResult,
+        CleanupSummary, ManagerDashboard, ServiceProbeResult, ServicesInventory,
+        UpdateProjectPortInput, WorkspaceImportInput, WorkspaceImportResult,
         WorkspaceProjectCandidate,
     },
     runtime_manager::RuntimeStatusRecord,
@@ -63,7 +64,9 @@ pub fn discover_workspace_projects(
     state: State<'_, AppState>,
     workspace_file: String,
 ) -> Result<Vec<WorkspaceProjectCandidate>, String> {
-    state.manager_service.discover_workspace_projects(&workspace_file)
+    state
+        .manager_service
+        .discover_workspace_projects(&workspace_file)
 }
 
 #[tauri::command]
@@ -109,4 +112,29 @@ pub fn get_runtime_status(
     project_id: String,
 ) -> Result<RuntimeStatusRecord, String> {
     state.manager_service.get_runtime_status(&project_id)
+}
+
+#[tauri::command]
+pub fn get_services_inventory(state: State<'_, AppState>) -> Result<ServicesInventory, String> {
+    Ok(state.manager_service.get_services_inventory())
+}
+
+#[tauri::command]
+pub fn clean_logs(state: State<'_, AppState>) -> Result<CleanupSummary, String> {
+    state.manager_service.clean_logs()
+}
+
+#[tauri::command]
+pub fn clean_workspaces(state: State<'_, AppState>) -> Result<CleanupSummary, String> {
+    state.manager_service.clean_workspaces()
+}
+
+#[tauri::command]
+pub fn clean_generated_data(state: State<'_, AppState>) -> Result<CleanupSummary, String> {
+    state.manager_service.clean_generated_data()
+}
+
+#[tauri::command]
+pub fn probe_services(state: State<'_, AppState>) -> Result<ServiceProbeResult, String> {
+    state.manager_service.probe_services()
 }

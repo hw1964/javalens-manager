@@ -1,11 +1,15 @@
 import { writable } from "svelte/store";
 import {
   addProject,
+  cleanGeneratedData,
+  cleanLogs,
+  cleanWorkspaces,
   deleteAllProjects,
   deleteProject,
   downloadOrUpdateJavalens,
   getDashboard,
   getRuntimeStatus,
+  probeServices as probeServicesApi,
   startAllRuntimes,
   startRuntime,
   stopAllRuntimes,
@@ -13,7 +17,9 @@ import {
   updateProjectPort as updateProjectPortApi,
   updateSettings,
   type AddProjectInput,
+  type CleanupSummary,
   type ManagerDashboard,
+  type ServiceProbeResult,
   type RuntimeStatusRecord,
   type UpdateSettingsInput
 } from "../api/tauri";
@@ -23,6 +29,10 @@ interface AppState extends Partial<ManagerDashboard> {
   isBusy: boolean;
   error?: string;
   projectErrors?: Record<string, string>;
+  lastCleanupSummary?: CleanupSummary;
+  serviceProbeBusy?: boolean;
+  serviceProbeError?: string;
+  lastServiceProbe?: ServiceProbeResult;
 }
 
 const initialState: AppState = {
@@ -115,6 +125,66 @@ export function createAppStore() {
         ...state,
         isBusy: false,
         error: normalizeError(error)
+      }));
+    }
+  }
+
+  async function runCleanup(
+    cleanupCall: () => Promise<CleanupSummary>
+  ) {
+    update((state) => ({ ...state, isBusy: true, error: undefined }));
+    try {
+      const summary = await cleanupCall();
+      const dashboard = await getDashboard();
+      update((state) => ({
+        ...state,
+        ...dashboard,
+        isBusy: false,
+        error: undefined,
+        lastCleanupSummary: summary
+      }));
+    } catch (error) {
+      update((state) => ({
+        ...state,
+        isBusy: false,
+        error: normalizeError(error)
+      }));
+    }
+  }
+
+  async function cleanAllLogs() {
+    await runCleanup(() => cleanLogs());
+  }
+
+  async function cleanAllWorkspaces() {
+    await runCleanup(() => cleanWorkspaces());
+  }
+
+  async function cleanAllGeneratedData() {
+    await runCleanup(() => cleanGeneratedData());
+  }
+
+  async function probeServices() {
+    update((state) => ({
+      ...state,
+      serviceProbeBusy: true,
+      serviceProbeError: undefined
+    }));
+
+    try {
+      const result = await probeServicesApi();
+      update((state) => ({
+        ...state,
+        serviceProbeBusy: false,
+        lastServiceProbe: result,
+        // Failed probes already carry user-visible detail in lastServiceProbe.
+        serviceProbeError: undefined
+      }));
+    } catch (error) {
+      update((state) => ({
+        ...state,
+        serviceProbeBusy: false,
+        serviceProbeError: normalizeError(error)
       }));
     }
   }
@@ -348,6 +418,20 @@ export function createAppStore() {
     }));
   }
 
+  function clearCleanupSummary() {
+    update((state) => ({
+      ...state,
+      lastCleanupSummary: undefined
+    }));
+  }
+
+  function clearServiceProbeError() {
+    update((state) => ({
+      ...state,
+      serviceProbeError: undefined
+    }));
+  }
+
   return {
     subscribe,
     load,
@@ -363,6 +447,12 @@ export function createAppStore() {
     stopProject,
     refreshProjectStatus,
     selectProject,
-    clearError
+    clearError,
+    cleanAllLogs,
+    cleanAllWorkspaces,
+    cleanAllGeneratedData,
+    clearCleanupSummary,
+    probeServices,
+    clearServiceProbeError
   };
 }
