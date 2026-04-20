@@ -30,6 +30,7 @@ pub fn run() {
             commands::update_project_port,
             commands::delete_project,
             commands::start_all_runtimes,
+            commands::stop_all_runtimes,
             commands::delete_all_projects,
             commands::discover_workspace_projects,
             commands::import_workspace_projects,

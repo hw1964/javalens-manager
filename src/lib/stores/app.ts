@@ -8,7 +8,9 @@ import {
   getRuntimeStatus,
   startAllRuntimes,
   startRuntime,
+  stopAllRuntimes,
   stopRuntime,
+  updateProjectPort as updateProjectPortApi,
   updateSettings,
   type AddProjectInput,
   type ManagerDashboard,
@@ -20,11 +22,13 @@ interface AppState extends Partial<ManagerDashboard> {
   selectedProjectId?: string;
   isBusy: boolean;
   error?: string;
+  projectErrors?: Record<string, string>;
 }
 
 const initialState: AppState = {
   projects: [],
   runtimeStatuses: {},
+  projectErrors: {},
   isBusy: false
 };
 
@@ -47,6 +51,11 @@ export function createAppStore() {
     update((state) => ({
       ...state,
       ...dashboard,
+      projectErrors: Object.fromEntries(
+        Object.entries(state.projectErrors ?? {}).filter(([projectId]) =>
+          dashboard.projects.some((project) => project.id === projectId)
+        )
+      ),
       selectedProjectId:
         state.selectedProjectId && dashboard.projects.some((project) => project.id === state.selectedProjectId)
           ? state.selectedProjectId
@@ -83,6 +92,16 @@ export function createAppStore() {
         isBusy: false,
         error: normalizeError(error)
       }));
+    }
+  }
+
+  async function updateProjectPortEntry(projectId: string, assignedPort: number) {
+    update((state) => ({ ...state, isBusy: true, error: undefined }));
+    try {
+      syncDashboard(await updateProjectPortApi({ projectId, assignedPort }));
+      clearProjectError(projectId);
+    } catch (error) {
+      setProjectError(projectId, error);
     }
   }
 
@@ -147,11 +166,7 @@ export function createAppStore() {
       const status = await startRuntime(projectId);
       mergeRuntimeStatus(projectId, status);
     } catch (error) {
-      update((state) => ({
-        ...state,
-        isBusy: false,
-        error: normalizeError(error)
-      }));
+      setProjectError(projectId, error);
     }
   }
 
@@ -168,12 +183,26 @@ export function createAppStore() {
     }
   }
 
+  async function stopAllProjects() {
+    update((state) => ({ ...state, isBusy: true, error: undefined }));
+    try {
+      syncDashboard(await stopAllRuntimes());
+    } catch (error) {
+      update((state) => ({
+        ...state,
+        isBusy: false,
+        error: normalizeError(error)
+      }));
+    }
+  }
+
   async function stopProject(projectId: string) {
     update((state) => ({ ...state, isBusy: true, error: undefined }));
 
     try {
       const status = await stopRuntime(projectId);
       mergeRuntimeStatus(projectId, status);
+      clearProjectError(projectId);
     } catch (error) {
       update((state) => ({
         ...state,
@@ -193,6 +222,7 @@ export function createAppStore() {
           [projectId]: status
         }
       }));
+      clearProjectError(projectId);
     } catch (error) {
       update((state) => ({
         ...state,
@@ -264,14 +294,44 @@ export function createAppStore() {
   }
 
   function mergeRuntimeStatus(projectId: string, status: RuntimeStatusRecord) {
+    update((state) => {
+      const projectErrors = { ...(state.projectErrors ?? {}) };
+      delete projectErrors[projectId];
+      return {
+        ...state,
+        projectErrors,
+        runtimeStatuses: {
+          ...(state.runtimeStatuses ?? {}),
+          [projectId]: status
+        },
+        isBusy: false
+      };
+    });
+  }
+
+  function setProjectError(projectId: string, error: unknown) {
     update((state) => ({
       ...state,
-      runtimeStatuses: {
-        ...(state.runtimeStatuses ?? {}),
-        [projectId]: status
-      },
-      isBusy: false
+      isBusy: false,
+      projectErrors: {
+        ...(state.projectErrors ?? {}),
+        [projectId]: normalizeError(error)
+      }
     }));
+  }
+
+  function clearProjectError(projectId: string) {
+    update((state) => {
+      if (!state.projectErrors?.[projectId]) {
+        return state;
+      }
+      const projectErrors = { ...(state.projectErrors ?? {}) };
+      delete projectErrors[projectId];
+      return {
+        ...state,
+        projectErrors
+      };
+    });
   }
 
   function selectProject(projectId: string) {
@@ -292,12 +352,14 @@ export function createAppStore() {
     subscribe,
     load,
     addProjectEntry,
+    updateProjectPortEntry,
     deleteProjectEntry,
     deleteAllProjectEntries,
     updateManagerSettings,
     downloadLatestRuntime,
     startProject,
     startAllProjects,
+    stopAllProjects,
     stopProject,
     refreshProjectStatus,
     selectProject,

@@ -152,6 +152,10 @@ export function startAllRuntimes(): Promise<ManagerDashboard> {
   return invoke("start_all_runtimes");
 }
 
+export function stopAllRuntimes(): Promise<ManagerDashboard> {
+  return invoke("stop_all_runtimes");
+}
+
 export function deleteAllProjects(): Promise<ManagerDashboard> {
   return invoke("delete_all_projects");
 }

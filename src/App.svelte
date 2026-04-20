@@ -10,6 +10,7 @@
   } from "./lib/api/tauri";
 
   const appStore = createAppStore();
+  const managerBuildVersion = "20260420.01";
 
   let currentView: "dashboard" | "settings" = "dashboard";
 
@@ -17,6 +18,13 @@
   $: selectedStatus = selectedProject
     ? $appStore.runtimeStatuses?.[selectedProject.id]
     : undefined;
+  $: runtimeSubtitle = $appStore.installedRuntime?.version
+    ? `javalens-manager ${managerBuildVersion} | JavaLens ${$appStore.installedRuntime.version}${
+        $appStore.releaseStatus?.updateAvailable
+          ? ` (update: ${$appStore.releaseStatus.latestVersion ?? "available"})`
+          : ""
+      }`
+    : `javalens-manager ${managerBuildVersion} | JavaLens runtime not downloaded`;
 
   onMount(() => {
     appStore.load();
@@ -39,8 +47,8 @@
   <header class="hero panel">
     <div class="header-content">
       <div>
-        <p class="eyebrow">Sprint 3 UI Cleanup</p>
         <h1>javalens-manager</h1>
+        <p class="title-subline muted">{runtimeSubtitle}</p>
       </div>
       <nav class="nav-tabs">
         <button
@@ -69,8 +77,8 @@
   {/if}
 
   {#if currentView === 'dashboard'}
-    <section class="layout">
-      <div class="stack">
+    <section class="layout dashboard-layout">
+      <div class="dashboard-column">
         <ProjectForm
           disabled={$appStore.isBusy}
           suggestedPort={$appStore.suggestedPort}
@@ -79,34 +87,45 @@
         />
       </div>
 
-      <ProjectList
-        disabled={$appStore.isBusy}
-        onRefresh={(projectId) => appStore.refreshProjectStatus(projectId)}
-        onSelect={(projectId) => appStore.selectProject(projectId)}
-        onStart={(projectId) => appStore.startProject(projectId)}
-        onStartAll={() => appStore.startAllProjects()}
-        onStop={(projectId) => appStore.stopProject(projectId)}
-        onDelete={(projectId) => appStore.deleteProjectEntry(projectId)}
-        onDeleteAll={() => appStore.deleteAllProjectEntries()}
-        projects={$appStore.projects ?? []}
-        runtimeStatuses={$appStore.runtimeStatuses ?? {}}
-        selectedProjectId={$appStore.selectedProjectId}
-      />
+      <div class="dashboard-column">
+        <ProjectList
+          disabled={$appStore.isBusy}
+          onRefresh={(projectId) => appStore.refreshProjectStatus(projectId)}
+          onSelect={(projectId) => appStore.selectProject(projectId)}
+          onStart={(projectId) => appStore.startProject(projectId)}
+          onStartAll={() => appStore.startAllProjects()}
+          onStop={(projectId) => appStore.stopProject(projectId)}
+          onStopAll={() => appStore.stopAllProjects()}
+          onDelete={(projectId) => appStore.deleteProjectEntry(projectId)}
+          onDeleteAll={() => appStore.deleteAllProjectEntries()}
+          onUpdatePort={(projectId, assignedPort) => appStore.updateProjectPortEntry(projectId, assignedPort)}
+          projects={$appStore.projects ?? []}
+          projectErrors={$appStore.projectErrors ?? {}}
+          runtimeStatuses={$appStore.runtimeStatuses ?? {}}
+          selectedProjectId={$appStore.selectedProjectId}
+        />
+      </div>
     </section>
 
     {#if ($appStore.projects ?? []).length > 0}
       <section class="panel detail-panel">
         <div class="detail-header">
-          <h2>Selected Project Runtime</h2>
+          <h2>Selected Project Status</h2>
           {#if selectedProject}
-            <button on:click={() => appStore.refreshProjectStatus(selectedProject.id)} type="button">
-              Refresh status
+            <button
+              aria-label={`Refresh status for ${selectedProject.name}`}
+              class="icon-refresh"
+              on:click={() => appStore.refreshProjectStatus(selectedProject.id)}
+              title="Refresh status"
+              type="button"
+            >
+              ↻
             </button>
           {/if}
         </div>
 
         {#if selectedProject && selectedStatus}
-          <p class="muted">Status and runtime details for the currently selected project.</p>
+          <p class="muted">Status and process details for the currently selected project.</p>
           <dl class="detail-grid">
             <div>
               <dt>Name</dt>
@@ -125,7 +144,7 @@
               <dd>{selectedProject.assignedPort}</dd>
             </div>
             <div>
-              <dt>Runtime source</dt>
+              <dt>Service</dt>
               <dd>{selectedStatus.runtimeLabel}</dd>
             </div>
             <div>

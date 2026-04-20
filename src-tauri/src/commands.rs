@@ -49,6 +49,11 @@ pub fn start_all_runtimes(state: State<'_, AppState>) -> Result<ManagerDashboard
 }
 
 #[tauri::command]
+pub fn stop_all_runtimes(state: State<'_, AppState>) -> Result<ManagerDashboard, String> {
+    state.manager_service.stop_all_runtimes()
+}
+
+#[tauri::command]
 pub fn delete_all_projects(state: State<'_, AppState>) -> Result<ManagerDashboard, String> {
     state.manager_service.delete_all_projects()
 }

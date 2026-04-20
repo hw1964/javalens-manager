@@ -150,6 +150,28 @@ impl ManagerService {
         self.load_dashboard()
     }
 
+    pub fn stop_all_runtimes(&self) -> Result<ManagerDashboard, String> {
+        let projects = self.config_store.list_projects();
+        let mut errors = Vec::new();
+
+        for project in projects {
+            match self.resolve_runtime_reference(&project) {
+                Ok(reference) => {
+                    if let Err(error) = self.runtime_manager.stop_runtime(&reference) {
+                        errors.push(format!("{}: {error}", project.name));
+                    }
+                }
+                Err(error) => errors.push(format!("{}: {error}", project.name)),
+            }
+        }
+
+        if !errors.is_empty() {
+            return Err(format!("Some runtimes failed to stop: {}", errors.join(" | ")));
+        }
+
+        self.load_dashboard()
+    }
+
     pub fn delete_all_projects(&self) -> Result<ManagerDashboard, String> {
         let project_ids: Vec<String> = self
             .config_store

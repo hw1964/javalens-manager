@@ -156,74 +156,83 @@
 </script>
 
 <form class="panel stack" on:submit|preventDefault={handleSubmit}>
-  <div class="section-intro">
-    <h2>Register Project</h2>
-    <p class="muted">
-      Pick a Java project folder and assign a project port.
-    </p>
-  </div>
-
-  <label class="field">
-    <span>Name</span>
-    <input bind:value={name} disabled={disabled} placeholder="Defaults to the selected folder name" required />
-  </label>
-
-  <label class="field">
-    <span>Project path</span>
-    <div class="field-row">
-      <input
-        bind:value={projectPath}
-        disabled={disabled}
-        placeholder="/path/to/java/project"
-        required
-      />
-      <button disabled={disabled} on:click={chooseProjectFolder} type="button">Browse</button>
+  <section class="stack">
+    <div class="section-intro">
+      <h2>Register Project</h2>
+      <p class="muted">
+        Pick a Java project folder and assign a project port.
+      </p>
     </div>
-  </label>
 
-  <label class="field">
-    <span>Assigned port</span>
-    <input bind:value={assignedPort} disabled={disabled} min="1024" step="1" type="number" required />
-  </label>
+    <label class="field">
+      <span>Name</span>
+      <input bind:value={name} disabled={disabled} placeholder="Defaults to the selected folder name" required />
+    </label>
 
-  <button class="primary" disabled={disabled || !canSubmit} type="submit">Save project</button>
+    <label class="field">
+      <span>Project path</span>
+      <div class="field-row">
+        <input
+          bind:value={projectPath}
+          disabled={disabled}
+          placeholder="/path/to/java/project"
+          required
+        />
+        <button disabled={disabled} on:click={chooseProjectFolder} type="button">Browse</button>
+      </div>
+    </label>
 
-  <hr />
+    <label class="field">
+      <span>Assigned port</span>
+      <input bind:value={assignedPort} disabled={disabled} min="1024" step="1" type="number" required />
+    </label>
 
-  <div class="section-intro">
-    <h2>Import VSCode Workspace</h2>
-    <p class="muted">Discover Maven/Gradle and Eclipse/PDE Java projects from a .code-workspace.</p>
-  </div>
+    <button class="primary" disabled={disabled || !canSubmit} type="submit">Save project</button>
+  </section>
 
-  <label class="field">
-    <span>.code-workspace file</span>
-    <div class="field-row">
-      <input bind:value={workspaceFile} disabled={disabled || isImporting} placeholder="/path/to/workspace.code-workspace" />
-      <button disabled={disabled || isImporting} on:click={chooseWorkspaceFile} type="button">Browse</button>
-      <button disabled={disabled || isImporting} on:click={discoverFromWorkspace} type="button">Discover</button>
+  <hr class="section-divider" />
+
+  <section class="stack">
+    <div class="section-intro">
+      <h2>Import VSCode Workspace</h2>
+      <p class="muted">Discover Maven/Gradle and Eclipse/PDE Java projects from a .code-workspace.</p>
     </div>
-  </label>
 
-  {#if candidates.length > 0}
-    <div class="stack list">
-      {#each candidates as candidate}
-        <label class="checkbox-row">
-          <input
-            checked={selectedPaths.includes(candidate.projectPath)}
-            disabled={disabled || isImporting}
-            on:change={() => toggleCandidate(candidate.projectPath)}
-            type="checkbox"
-          />
-          <span>{candidate.name} ({candidate.kind}) - {candidate.projectPath}</span>
-        </label>
-      {/each}
-    </div>
-    <button class="primary" disabled={disabled || isImporting || selectedPaths.length === 0} on:click={importSelected} type="button">
-      Import selected
-    </button>
-  {/if}
+    <label class="field">
+      <span>.code-workspace file</span>
+      <div class="field-row">
+        <input bind:value={workspaceFile} disabled={disabled || isImporting} placeholder="/path/to/workspace.code-workspace" />
+        <button disabled={disabled || isImporting} on:click={chooseWorkspaceFile} type="button">Browse</button>
+        <button disabled={disabled || isImporting} on:click={discoverFromWorkspace} type="button">Discover</button>
+      </div>
+    </label>
 
-  {#if importMessage}
-    <p class="muted">{importMessage}</p>
-  {/if}
+    {#if candidates.length > 0}
+      <div class="stack candidate-list">
+        {#each candidates as candidate}
+          <label class="checkbox-row">
+            <input
+              checked={selectedPaths.includes(candidate.projectPath)}
+              disabled={disabled || isImporting}
+              on:change={() => toggleCandidate(candidate.projectPath)}
+              type="checkbox"
+            />
+            <span>{candidate.name} ({candidate.kind}) - {candidate.projectPath}</span>
+          </label>
+        {/each}
+      </div>
+      <button
+        class="primary"
+        disabled={disabled || isImporting || selectedPaths.length === 0}
+        on:click={importSelected}
+        type="button"
+      >
+        Import selected
+      </button>
+    {/if}
+
+    {#if importMessage}
+      <p class="muted">{importMessage}</p>
+    {/if}
+  </section>
 </form>
