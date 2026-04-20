@@ -134,6 +134,11 @@ h3 {
   font-size: 0.98rem;
 }
 
+.title-subline {
+  margin-top: 0.3rem;
+  font-size: 0.82rem;
+}
+
 .bootstrap-grid,
 .detail-grid {
   display: grid;
@@ -214,8 +219,65 @@ button:disabled {
 .project-list-toolbar {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: -0.2rem;
+}
+
+.project-list-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.aggregate-pill {
+  margin-left: 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.48rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+.aggregate-pill.running {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.aggregate-pill.stopped {
+  background: rgba(71, 85, 105, 0.45);
+  color: #cbd5e1;
+}
+
+.aggregate-pill.starting {
+  background: rgba(245, 158, 11, 0.22);
+  color: #fbbf24;
+}
+
+.segmented-actions {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(30, 41, 59, 0.6);
+}
+
+.segmented-actions button {
+  border: none;
+  border-right: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0;
+  background: transparent;
+  padding: 0.4rem 0.62rem;
+  font-size: 0.82rem;
+}
+
+.segmented-actions button:last-child {
+  border-right: none;
+}
+
+.segmented-actions button:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.12);
 }
 
 .project-card {
@@ -259,6 +321,12 @@ button:disabled {
 .meta span {
   color: #cbd5e1;
   font-size: 0.78rem;
+}
+
+.project-error {
+  margin: 0;
+  font-size: 0.74rem;
+  color: #f87171;
 }
 
 .badge {
@@ -421,6 +489,10 @@ dd {
 @media (max-width: 960px) {
   .layout {
     grid-template-columns: 1fr;
+  }
+
+  .project-list-header {
+    flex-direction: column;
   }
 
   .app-shell {
