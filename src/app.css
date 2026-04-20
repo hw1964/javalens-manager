@@ -49,17 +49,22 @@ button {
 }
 
 .dashboard-layout {
-  --dashboard-panel-height: clamp(28rem, calc(100vh - 12.5rem), 60rem);
-  align-items: stretch;
+  --dashboard-panel-height: clamp(30rem, calc(100vh - 13.5rem), 58rem);
+  align-items: start;
 }
 
 .dashboard-column {
   min-height: 0;
+  height: var(--dashboard-panel-height);
 }
 
 .dashboard-column > .panel {
-  height: var(--dashboard-panel-height);
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
+}
+
+.dashboard-column:first-child > .panel {
   overflow: auto;
 }
 
@@ -240,7 +245,9 @@ button:disabled {
 
 .list {
   max-height: 56rem;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.35rem;
 }
 
 .project-list-toolbar {
@@ -258,6 +265,17 @@ button:disabled {
 .project-list-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.project-list-scroll {
+  max-height: none;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.35rem;
+  align-content: start;
 }
 
 .aggregate-pill {
@@ -314,21 +332,40 @@ button:disabled {
 
 .project-card {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.3rem;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 14px;
-  padding: 0.75rem;
+  padding: 0.55rem 0.65rem;
   background: rgba(15, 23, 42, 0.6);
+  min-width: 0;
+  overflow: visible;
 }
 
 .project-card.selected {
   border-color: rgba(96, 165, 250, 0.55);
 }
 
-.select {
+.project-row {
   display: flex;
+  justify-content: space-between;
   align-items: start;
-  gap: 1rem;
+  gap: 0.65rem;
+}
+
+.project-left {
+  min-width: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.project-right {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: end;
+}
+
+.select {
+  display: inline-flex;
   border: none;
   background: transparent;
   padding: 0;
@@ -336,17 +373,10 @@ button:disabled {
   min-width: 0;
 }
 
-.project-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: start;
-  gap: 0.75rem;
-}
-
 .status-actions {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.35rem;
 }
 
 .icon-refresh {
@@ -366,17 +396,20 @@ button:disabled {
 }
 
 .path {
-  margin-top: 0.1rem;
+  margin-top: 0.02rem;
   color: #94a3b8;
-  font-size: 0.76rem;
-  word-break: break-word;
+  font-size: 0.74rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 42vw;
 }
 
 .meta,
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.6rem;
+  gap: 0.35rem;
 }
 
 .meta span {
@@ -384,25 +417,47 @@ button:disabled {
   font-size: 0.78rem;
 }
 
+.port-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+}
+
 .port-editor {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.24rem;
 }
 
 .port-editor input {
-  width: 5.5rem;
-  padding: 0.35rem 0.45rem;
-  font-size: 0.8rem;
+  width: 4.6rem;
+  padding: 0.22rem 0.38rem;
+  font-size: 0.74rem;
+  border-radius: 10px;
 }
 
 .port-editor button {
-  padding: 0.28rem 0.55rem;
-  font-size: 0.76rem;
+  padding: 0.18rem 0.42rem;
+  font-size: 0.72rem;
+  border-radius: 10px;
+}
+
+.actions button {
+  padding: 0.32rem 0.56rem;
+  font-size: 0.8rem;
+}
+
+.row-actions {
+  justify-content: flex-end;
+}
+
+.row-actions button {
+  padding: 0.3rem 0.52rem;
+  font-size: 0.78rem;
 }
 
 .project-error {
-  margin: 0;
+  margin: 0.05rem 0 0;
   font-size: 0.74rem;
   color: #f87171;
 }
@@ -569,12 +624,30 @@ dd {
     grid-template-columns: 1fr;
   }
 
+  .dashboard-column {
+    height: auto;
+  }
+
   .dashboard-column > .panel {
     height: auto;
+    overflow: auto;
   }
 
   .project-list-header {
     flex-direction: column;
+  }
+
+  .project-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .project-right {
+    justify-items: start;
+  }
+
+  .path {
+    max-width: 100%;
   }
 
   .app-shell {

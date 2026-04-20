@@ -127,48 +127,63 @@
       No projects registered yet. Configure JavaLens first, then add a Java project on the left.
     </div>
   {:else}
-    <div class="stack list">
+    <div class="stack list project-list-scroll">
       {#each projects as project}
         {@const status = runtimeStatuses[project.id]}
         <article class:selected={project.id === selectedProjectId} class="project-card">
-          <div class="project-head">
-            <button class="select" on:click={() => onSelect(project.id)} type="button">
-              <div>
+          <div class="project-row">
+            <div class="project-left">
+              <button class="select" on:click={() => onSelect(project.id)} type="button">
                 <h3>{project.name}</h3>
-                <p class="path">{project.projectPath}</p>
+              </button>
+              <p class="path" title={project.projectPath}>{project.projectPath}</p>
+              <div class="meta">
+                <div class="port-row">
+                  <span>Port</span>
+                  <div class="port-editor">
+                    <input
+                      aria-label={`Assigned port for ${project.name}`}
+                      disabled={disabled}
+                      inputmode="numeric"
+                      on:input={(event) => updateDraftPort(project.id, (event.currentTarget as HTMLInputElement).value)}
+                      value={getDraftPort(project)}
+                    />
+                    <button disabled={disabled} on:click={() => applyPort(project)} type="button">
+                      Set
+                    </button>
+                  </div>
+                </div>
               </div>
-            </button>
-            <div class="status-actions">
-              <button
-                aria-label={`Refresh status for ${project.name}`}
-                class="icon-refresh"
-                disabled={disabled}
-                on:click={() => onRefresh(project.id)}
-                title="Refresh status"
-                type="button"
-              >
-                ↻
-              </button>
-              <span class={`badge ${status?.phase ?? "stopped"}`}>
-                <span class={`status-lamp ${status?.phase ?? "stopped"}`}></span>
-                {status?.phase ?? "stopped"}
-              </span>
             </div>
-          </div>
 
-          <div class="meta">
-            <span>Port: {project.assignedPort}</span>
-            <div class="port-editor">
-              <input
-                aria-label={`Assigned port for ${project.name}`}
-                disabled={disabled}
-                inputmode="numeric"
-                on:input={(event) => updateDraftPort(project.id, (event.currentTarget as HTMLInputElement).value)}
-                value={getDraftPort(project)}
-              />
-              <button disabled={disabled} on:click={() => applyPort(project)} type="button">
-                Set
-              </button>
+            <div class="project-right">
+              <div class="status-actions">
+                <button
+                  aria-label={`Refresh status for ${project.name}`}
+                  class="icon-refresh"
+                  disabled={disabled}
+                  on:click={() => onRefresh(project.id)}
+                  title="Refresh status"
+                  type="button"
+                >
+                  ↻
+                </button>
+                <span class={`badge ${status?.phase ?? "stopped"}`}>
+                  <span class={`status-lamp ${status?.phase ?? "stopped"}`}></span>
+                  {status?.phase ?? "stopped"}
+                </span>
+              </div>
+              <div class="actions row-actions">
+                <button disabled={disabled} on:click={() => onStart(project.id)} type="button">
+                  Start
+                </button>
+                <button disabled={disabled} on:click={() => onStop(project.id)} type="button">
+                  Stop
+                </button>
+                <button disabled={disabled} on:click={() => onDelete(project.id)} type="button">
+                  Delete
+                </button>
+              </div>
             </div>
           </div>
           {#if portInputErrors[project.id]}
@@ -178,18 +193,6 @@
           {:else if extractProjectError(status)}
             <p class="project-error">{extractProjectError(status)}</p>
           {/if}
-
-          <div class="actions">
-            <button disabled={disabled} on:click={() => onStart(project.id)} type="button">
-              Start
-            </button>
-            <button disabled={disabled} on:click={() => onStop(project.id)} type="button">
-              Stop
-            </button>
-            <button disabled={disabled} on:click={() => onDelete(project.id)} type="button">
-              Delete
-            </button>
-          </div>
         </article>
       {/each}
     </div>
