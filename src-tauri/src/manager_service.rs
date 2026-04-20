@@ -260,6 +260,11 @@ impl ManagerService {
         self.load_dashboard()
     }
 
+    pub fn redetect_mcp_client_paths(&self) -> Result<ManagerDashboard, String> {
+        self.config_store.redetect_mcp_client_paths()?;
+        self.load_dashboard()
+    }
+
     pub fn download_or_update_javalens(&self) -> Result<ManagerDashboard, String> {
         let mut settings = self.config_store.get_settings();
         self.release_manager

@@ -24,18 +24,37 @@
   let splitterPointerId: number | null = null;
   let dragStartX = 0;
   let dragStartWidth = 0;
+  let lastDashboardWidth = 0;
 
   $: selectedProject = $appStore.projects?.find((project) => project.id === $appStore.selectedProjectId);
   $: selectedStatus = selectedProject
     ? $appStore.runtimeStatuses?.[selectedProject.id]
     : undefined;
-  $: runtimeSubtitle = $appStore.installedRuntime?.version
-    ? `javalens-manager ${managerBuildVersion} | JavaLens ${$appStore.installedRuntime.version}${
+  $: runtimeSource = $appStore.settings?.globalRuntimeSource;
+  $: runtimeSubtitle = (() => {
+    const prefix = `javalens-manager ${managerBuildVersion} | `;
+    if (runtimeSource?.kind === "localJar") {
+      const jarPath = runtimeSource.jarPath?.trim() ?? "";
+      if (!jarPath) {
+        return `${prefix}JavaLens local JAR (path not set)`;
+      }
+      const jarName = jarPath.split(/[\\/]/).pop() ?? jarPath;
+      return `${prefix}JavaLens local JAR ${jarName}`;
+    }
+
+    if ($appStore.installedRuntime?.version) {
+      return `${prefix}JavaLens ${$appStore.installedRuntime.version}${
         $appStore.releaseStatus?.updateAvailable
           ? ` (update: ${$appStore.releaseStatus.latestVersion ?? "available"})`
           : ""
-      }`
-    : `javalens-manager ${managerBuildVersion} | JavaLens runtime not downloaded`;
+      }`;
+    }
+    return `${prefix}JavaLens runtime not downloaded`;
+  })();
+  $: runtimeSubtitleTitle =
+    runtimeSource?.kind === "localJar" && runtimeSource.jarPath?.trim()
+      ? runtimeSource.jarPath
+      : runtimeSubtitle;
 
   onMount(() => {
     appStore.load();
@@ -43,12 +62,21 @@
     if (typeof window !== "undefined") {
       const mediaQuery = window.matchMedia("(max-width: 960px)");
       const updateCompact = () => {
+        const wasCompact = isCompactLayout;
         isCompactLayout = mediaQuery.matches;
+        if (wasCompact && !isCompactLayout) {
+          lastDashboardWidth = getDashboardWidth();
+          applyClampedWidth();
+          return;
+        }
+        lastDashboardWidth = getDashboardWidth();
       };
       updateCompact();
+      window.addEventListener("resize", handleWindowResize);
       mediaQuery.addEventListener("change", updateCompact);
 
       return () => {
+        window.removeEventListener("resize", handleWindowResize);
         mediaQuery.removeEventListener("change", updateCompact);
       };
     }
@@ -80,6 +108,23 @@
     return Math.max(MIN_LEFT_PANEL_WIDTH, Math.min(width, maxWidth));
   }
 
+  function getDashboardWidth(): number {
+    if (typeof window === "undefined") {
+      return 0;
+    }
+    return dashboardLayoutEl?.clientWidth ?? window.innerWidth;
+  }
+
+  function applyClampedWidth() {
+    if (isCompactLayout || currentView !== "dashboard") {
+      return;
+    }
+    const clamped = clampLeftPanelWidth(leftPanelWidth);
+    if (clamped !== leftPanelWidth) {
+      leftPanelWidth = clamped;
+    }
+  }
+
   function stopSplitterDrag() {
     if (!isDraggingSplitter) {
       return;
@@ -104,6 +149,7 @@
       return;
     }
     stopSplitterDrag();
+    lastDashboardWidth = getDashboardWidth();
   }
 
   function handleSplitterPointerDown(event: PointerEvent) {
@@ -120,6 +166,39 @@
     window.addEventListener("pointerup", handleSplitterPointerUp);
     window.addEventListener("pointercancel", handleSplitterPointerUp);
   }
+
+  function handleWindowResize() {
+    if (isCompactLayout || currentView !== "dashboard") {
+      lastDashboardWidth = getDashboardWidth();
+      return;
+    }
+
+    const nextWidth = getDashboardWidth();
+    if (nextWidth <= 0) {
+      return;
+    }
+
+    if (lastDashboardWidth <= 0) {
+      lastDashboardWidth = nextWidth;
+      applyClampedWidth();
+      return;
+    }
+
+    const scaledWidth = (leftPanelWidth / lastDashboardWidth) * nextWidth;
+    const clamped = clampLeftPanelWidth(scaledWidth);
+    if (clamped !== leftPanelWidth) {
+      leftPanelWidth = clamped;
+    }
+    lastDashboardWidth = nextWidth;
+  }
+
+  $: if (currentView === "dashboard") {
+    applyClampedWidth();
+    const width = getDashboardWidth();
+    if (width > 0) {
+      lastDashboardWidth = width;
+    }
+  }
 </script>
 
 <svelte:head>
@@ -131,7 +210,7 @@
     <div class="header-content">
       <div>
         <h1>javalens-manager</h1>
-        <p class="title-subline muted">{runtimeSubtitle}</p>
+        <p class="title-subline muted" title={runtimeSubtitleTitle}>{runtimeSubtitle}</p>
       </div>
       <nav class="nav-tabs">
         <button
@@ -272,6 +351,7 @@
         on:clearServiceProbeError={() => appStore.clearServiceProbeError()}
         on:download={() => appStore.downloadLatestRuntime()}
         on:probeServices={() => appStore.probeServices()}
+        on:redetectMcpPaths={() => appStore.redetectMcpClientPaths()}
         on:refresh={() => appStore.load()}
         on:save={handleSettingsSave}
       />

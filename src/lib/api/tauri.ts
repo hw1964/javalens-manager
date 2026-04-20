@@ -222,6 +222,10 @@ export function updateSettings(input: UpdateSettingsInput): Promise<ManagerDashb
   return invoke("update_settings", { input });
 }
 
+export function redetectMcpClientPaths(): Promise<ManagerDashboard> {
+  return invoke("redetect_mcp_client_paths");
+}
+
 export function downloadOrUpdateJavalens(): Promise<ManagerDashboard> {
   return invoke("download_or_update_javalens");
 }

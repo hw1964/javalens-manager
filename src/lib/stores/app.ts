@@ -10,6 +10,7 @@ import {
   getDashboard,
   getRuntimeStatus,
   probeServices as probeServicesApi,
+  redetectMcpClientPaths as redetectMcpClientPathsApi,
   startAllRuntimes,
   startRuntime,
   stopAllRuntimes,
@@ -120,6 +121,19 @@ export function createAppStore() {
 
     try {
       syncDashboard(await updateSettings(input));
+    } catch (error) {
+      update((state) => ({
+        ...state,
+        isBusy: false,
+        error: normalizeError(error)
+      }));
+    }
+  }
+
+  async function redetectMcpClientPaths() {
+    update((state) => ({ ...state, isBusy: true, error: undefined }));
+    try {
+      syncDashboard(await redetectMcpClientPathsApi());
     } catch (error) {
       update((state) => ({
         ...state,
@@ -440,6 +454,7 @@ export function createAppStore() {
     deleteProjectEntry,
     deleteAllProjectEntries,
     updateManagerSettings,
+    redetectMcpClientPaths,
     downloadLatestRuntime,
     startProject,
     startAllProjects,

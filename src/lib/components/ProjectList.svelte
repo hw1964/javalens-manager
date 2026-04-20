@@ -159,7 +159,7 @@
       No projects registered yet. Configure JavaLens first, then add a Java project on the left.
     </div>
   {:else}
-    <div class="stack list project-list-scroll">
+    <div class="stack project-list-scroll">
       {#each projects as project}
         {@const status = runtimeStatuses[project.id]}
         <article

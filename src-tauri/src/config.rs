@@ -473,6 +473,13 @@ impl ConfigStore {
         Ok(settings.clone())
     }
 
+    pub fn redetect_mcp_client_paths(&self) -> Result<ManagerSettings, String> {
+        let mut settings = self.settings.lock().expect("settings mutex poisoned");
+        settings.mcp_client_paths = merge_detected_mcp_paths(settings.mcp_client_paths.clone());
+        write_json(&self.paths.settings_file, &*settings)?;
+        Ok(settings.clone())
+    }
+
     pub fn write_settings(&self, settings: ManagerSettings) -> Result<ManagerSettings, String> {
         let mut guard = self.settings.lock().expect("settings mutex poisoned");
         *guard = settings.clone();

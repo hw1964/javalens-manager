@@ -35,6 +35,7 @@
     clearCleanupSummary: void;
     probeServices: void;
     clearServiceProbeError: void;
+    redetectMcpPaths: void;
   }>();
 
   let updatePolicy: UpdatePolicy = "ask";
@@ -53,22 +54,32 @@
     antigravity: {},
     intellij: {}
   };
+  let baselineSavePayload = "";
+  let currentSavePayload = "";
+  let lastAppliedSettingsSnapshot = "";
 
   $: if (settings) {
-    updatePolicy = settings.updatePolicy;
-    autoCheckForUpdates = settings.autoCheckForUpdates;
-    dataRoot = settings.dataRoot;
-    portRangeStart = settings.portRangeStart;
-    portRangeEnd = settings.portRangeEnd;
-    useSystemTray = settings.useSystemTray;
-    runtimeKind = settings.globalRuntimeSource.kind;
-    mcpMergeMode = settings.mcpMergeMode;
-    mcpBackupBeforeWrite = settings.mcpBackupBeforeWrite;
-    mcpClientPaths = settings.mcpClientPaths;
-    if (settings.globalRuntimeSource.kind === "localJar") {
-      localJarPath = settings.globalRuntimeSource.jarPath;
+    const settingsSnapshot = JSON.stringify(settings);
+    if (settingsSnapshot !== lastAppliedSettingsSnapshot) {
+      updatePolicy = settings.updatePolicy;
+      autoCheckForUpdates = settings.autoCheckForUpdates;
+      dataRoot = settings.dataRoot;
+      portRangeStart = settings.portRangeStart;
+      portRangeEnd = settings.portRangeEnd;
+      useSystemTray = settings.useSystemTray;
+      runtimeKind = settings.globalRuntimeSource.kind;
+      mcpMergeMode = settings.mcpMergeMode;
+      mcpBackupBeforeWrite = settings.mcpBackupBeforeWrite;
+      mcpClientPaths = settings.mcpClientPaths;
+      localJarPath =
+        settings.globalRuntimeSource.kind === "localJar" ? settings.globalRuntimeSource.jarPath : "";
+      lastAppliedSettingsSnapshot = settingsSnapshot;
+      baselineSavePayload = JSON.stringify(buildSaveInput());
     }
   }
+
+  $: currentSavePayload = JSON.stringify(buildSaveInput());
+  $: isDirty = currentSavePayload !== baselineSavePayload;
 
   async function chooseDataRoot() {
     const selected = await open({
@@ -144,8 +155,33 @@
     return entry?.effectivePath ?? entry?.manualOverridePath ?? entry?.autoDetectedPath ?? "not configured";
   }
 
-  function handleSave() {
-    dispatch("save", {
+  function mcpPathSource(entry: McpClientPathEntry | undefined): "manual" | "auto" | "missing" {
+    const manual = entry?.manualOverridePath?.trim();
+    if (manual) {
+      return "manual";
+    }
+    return entry?.autoDetectedPath ? "auto" : "missing";
+  }
+
+  function mcpPathSourceLabel(entry: McpClientPathEntry | undefined): string {
+    const source = mcpPathSource(entry);
+    if (source === "manual") {
+      return "manual";
+    }
+    if (source === "auto") {
+      return "auto-detected";
+    }
+    return "not configured";
+  }
+
+  function shouldShowDetectedHint(entry: McpClientPathEntry | undefined): boolean {
+    const autoPath = entry?.autoDetectedPath?.trim();
+    const manualPath = entry?.manualOverridePath?.trim();
+    return Boolean(autoPath && manualPath && autoPath !== manualPath);
+  }
+
+  function buildSaveInput(): UpdateSettingsInput {
+    return {
       updatePolicy,
       autoCheckForUpdates,
       dataRoot,
@@ -164,11 +200,17 @@
       mcpClientPaths,
       mcpMergeMode,
       mcpBackupBeforeWrite
-    });
+    };
+  }
+
+  function handleSave() {
+    const payload = buildSaveInput();
+    dispatch("save", payload);
+    baselineSavePayload = JSON.stringify(payload);
   }
 </script>
 
-<section class="panel stack">
+<section class="panel stack runtime-settings-root">
   <div>
     <h2>Settings</h2>
     <p class="muted">Configure JavaLens runtime, machine controls, diagnostics, and MCP location metadata.</p>
@@ -298,44 +340,120 @@
       {/if}
     </section>
 
-    <section class="panel stack settings-section">
-      <div class="section-intro">
+    <section class="panel stack settings-section machine-section">
+      <div class="section-intro paired-section-intro">
         <h3>Machine Runtime Controls</h3>
-        <p class="muted">Machine-local paths and networking controls.</p>
+        <p class="muted">Machine-local runtime paths and port controls.</p>
       </div>
+      <div class="machine-controls-grid">
+        <section class="machine-control-card compact-card stack">
+          <h4>Data Root</h4>
+          <label class="field">
+            <span>Manager data root</span>
+            <div class="field-row">
+              <input
+                bind:value={dataRoot}
+                disabled={disabled}
+                placeholder="/path/to/manager/data/root"
+                required
+              />
+              <button disabled={disabled} on:click={chooseDataRoot} type="button">Browse</button>
+            </div>
+          </label>
+          <label class="checkbox-row compact">
+            <input bind:checked={useSystemTray} disabled={disabled} type="checkbox" />
+            <span>Use system tray</span>
+          </label>
+        </section>
 
-      <label class="field">
-        <span>Manager Data Root</span>
-        <div class="field-row">
-          <input
-            bind:value={dataRoot}
-            disabled={disabled}
-            placeholder="/path/to/manager/data/root"
-            required
-          />
-          <button disabled={disabled} on:click={chooseDataRoot} type="button">Browse</button>
-        </div>
-      </label>
+        <section class="machine-control-card compact-card stack">
+          <h4>Port Range</h4>
+          <label class="field">
+            <span>Permitted project ports</span>
+            <div class="field-row port-range-row">
+              <input bind:value={portRangeStart} disabled={disabled} min="1024" step="1" type="number" />
+              <input bind:value={portRangeEnd} disabled={disabled} min="1024" step="1" type="number" />
+            </div>
+            <p class="hint">Manager assigns one port per project and checks conflicts.</p>
+          </label>
+        </section>
 
-      <label class="field">
-        <span>Permitted port range</span>
-        <div class="field-row">
-          <input bind:value={portRangeStart} disabled={disabled} min="1024" step="1" type="number" />
-          <input bind:value={portRangeEnd} disabled={disabled} min="1024" step="1" type="number" />
-        </div>
-        <p class="hint">Manager assigns one project port inside this range and validates conflicts.</p>
-      </label>
+        <section class="machine-control-card diagnostics-card stack">
+          <h4><strong>Diagnostics</strong></h4>
+          <div class="bootstrap-grid compact">
+            <div>
+              <span class="label">Projects</span>
+              <strong>{bootstrap?.projectsFile ?? "-"}</strong>
+            </div>
+            <div>
+              <span class="label">Settings</span>
+              <strong>{bootstrap?.settingsFile ?? "-"}</strong>
+            </div>
+            <div>
+              <span class="label">State</span>
+              <strong>{bootstrap?.stateDir ?? "-"}</strong>
+            </div>
+            <div>
+              <span class="label">Data root</span>
+              <strong>{bootstrap?.defaultDataRoot ?? "-"}</strong>
+            </div>
+          </div>
 
-      <label class="checkbox-row">
-        <input bind:checked={useSystemTray} disabled={disabled} type="checkbox" />
-        <span>Use system tray for manager background visibility</span>
-      </label>
+          <div class="actions compact">
+            <button
+              disabled={disabled}
+              on:click={() =>
+                confirmAndDispatch(
+                  "Delete all manager runtime logs? This keeps project registrations and settings.",
+                  "cleanLogs"
+                )}
+              type="button"
+            >
+              Clean logs
+            </button>
+            <button
+              disabled={disabled}
+              on:click={() =>
+                confirmAndDispatch(
+                  "Delete all manager workspace/index caches? This keeps project registrations and settings.",
+                  "cleanWorkspaces"
+                )}
+              type="button"
+            >
+              Clean workspaces
+            </button>
+            <button
+              disabled={disabled}
+              on:click={() =>
+                confirmAndDispatch(
+                  "Start from scratch by deleting generated logs + workspaces? Stop running runtimes first.",
+                  "cleanGeneratedData"
+                )}
+              type="button"
+            >
+              Start from scratch
+            </button>
+          </div>
+
+          {#if lastCleanupSummary}
+            <div class="banner">
+              <span>{lastCleanupSummary.detail} Files: {lastCleanupSummary.deletedFiles}, Dirs: {lastCleanupSummary.deletedDirs}</span>
+              <button on:click={() => dispatch("clearCleanupSummary")} type="button">Dismiss</button>
+            </div>
+          {/if}
+        </section>
+      </div>
     </section>
 
-    <section class="panel stack settings-section">
-      <div class="section-intro">
-        <h3>MCP Config Locations</h3>
-        <p class="muted">Store defaults and manual overrides here. Deploy execution is handled in Sprint 7 workflow.</p>
+    <section class="panel stack settings-section mcp-locations-section">
+      <div class="section-intro paired-section-intro mcp-section-intro">
+        <div>
+          <h3>MCP Config Locations</h3>
+          <p class="muted">Review detected config paths and set optional manual overrides.</p>
+        </div>
+        <button disabled={disabled} on:click={() => dispatch("redetectMcpPaths")} type="button">
+          Redetect defaults
+        </button>
       </div>
 
       {#each [
@@ -346,10 +464,19 @@
       ] as [clientKey, clientLabel]}
         {@const key = clientKey as keyof McpClientPaths}
         {@const entry = mcpClientPaths[key]}
-        <div class="stack mcp-client-card">
-          <strong>{clientLabel}</strong>
-          <p class="hint">Auto-detected: {entry?.autoDetectedPath ?? "not found"}</p>
-          <p class="hint">Effective: {effectivePath(entry)}</p>
+        <div class="stack mcp-client-card compact">
+          <div class="mcp-client-heading">
+            <strong>{clientLabel}</strong>
+            <span class={`mcp-source-badge ${mcpPathSource(entry)}`}>{mcpPathSourceLabel(entry)}</span>
+          </div>
+          <p class="hint mcp-current-path" title={effectivePath(entry)}>
+            <strong>Current:</strong> {effectivePath(entry)}
+          </p>
+          {#if shouldShowDetectedHint(entry)}
+            <p class="hint" title={entry?.autoDetectedPath ?? undefined}>
+              Detected default: {entry?.autoDetectedPath}
+            </p>
+          {/if}
           <div class="field-row">
             <input
               disabled={disabled}
@@ -376,78 +503,10 @@
         <span>Create backup before MCP config write</span>
       </label>
     </section>
-
-    <section class="panel stack settings-section">
-      <div class="section-intro">
-        <h3>Diagnostics &amp; Reset</h3>
-        <p class="muted">Paths and safe cleanup actions for starting from scratch.</p>
-      </div>
-      <div class="bootstrap-grid">
-        <div>
-          <span class="label">Projects</span>
-          <strong>{bootstrap?.projectsFile ?? "-"}</strong>
-        </div>
-        <div>
-          <span class="label">Settings</span>
-          <strong>{bootstrap?.settingsFile ?? "-"}</strong>
-        </div>
-        <div>
-          <span class="label">State</span>
-          <strong>{bootstrap?.stateDir ?? "-"}</strong>
-        </div>
-        <div>
-          <span class="label">Data root</span>
-          <strong>{bootstrap?.defaultDataRoot ?? "-"}</strong>
-        </div>
-      </div>
-
-      <div class="actions">
-        <button
-          disabled={disabled}
-          on:click={() =>
-            confirmAndDispatch(
-              "Delete all manager runtime logs? This keeps project registrations and settings.",
-              "cleanLogs"
-            )}
-          type="button"
-        >
-          Clean logs
-        </button>
-        <button
-          disabled={disabled}
-          on:click={() =>
-            confirmAndDispatch(
-              "Delete all manager workspace/index caches? This keeps project registrations and settings.",
-              "cleanWorkspaces"
-            )}
-          type="button"
-        >
-          Clean workspaces
-        </button>
-        <button
-          disabled={disabled}
-          on:click={() =>
-            confirmAndDispatch(
-              "Start from scratch by deleting generated logs + workspaces? Stop running runtimes first.",
-              "cleanGeneratedData"
-            )}
-          type="button"
-        >
-          Start from scratch
-        </button>
-      </div>
-
-      {#if lastCleanupSummary}
-        <div class="banner">
-          <span>{lastCleanupSummary.detail} Files: {lastCleanupSummary.deletedFiles}, Dirs: {lastCleanupSummary.deletedDirs}</span>
-          <button on:click={() => dispatch("clearCleanupSummary")} type="button">Dismiss</button>
-        </div>
-      {/if}
-    </section>
   </div>
 
-  <div class="actions">
-    <button class="primary" disabled={disabled} on:click={handleSave} type="button">
+  <div class="settings-save-footer">
+    <button class:primary={isDirty} class="save-settings-button" disabled={disabled} on:click={handleSave} type="button">
       Save settings
     </button>
   </div>

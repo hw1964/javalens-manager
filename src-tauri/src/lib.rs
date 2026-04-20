@@ -34,6 +34,7 @@ pub fn run() {
             commands::discover_workspace_projects,
             commands::import_workspace_projects,
             commands::update_settings,
+            commands::redetect_mcp_client_paths,
             commands::download_or_update_javalens,
             commands::start_runtime,
             commands::stop_runtime,

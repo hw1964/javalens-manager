@@ -86,6 +86,11 @@ pub fn update_settings(
 }
 
 #[tauri::command]
+pub fn redetect_mcp_client_paths(state: State<'_, AppState>) -> Result<ManagerDashboard, String> {
+    state.manager_service.redetect_mcp_client_paths()
+}
+
+#[tauri::command]
 pub fn download_or_update_javalens(state: State<'_, AppState>) -> Result<ManagerDashboard, String> {
     state.manager_service.download_or_update_javalens()
 }
