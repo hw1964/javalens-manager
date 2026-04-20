@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make managed JavaLens servers discoverable across clients by generating MCP client configuration artifacts automatically (Cursor, Claude, Antigravity), and generate client-specific agent rule blocks that enforce MCP-service-first behavior over ad-hoc filesystem search flows.
+Deploy project-specific JavaLens MCP services into client MCP configs automatically (Cursor, Claude, Antigravity, IntelliJ), and generate client-specific MCP-first rule blocks that enforce "MCP tools before grep/find/manual refactor" behavior.
 
 ## Problem Statement
 
@@ -16,11 +16,13 @@ Make managed JavaLens servers discoverable across clients by generating MCP clie
 
 Acceptance criteria:
 - Add a generator service that produces client-specific MCP config payloads from manager project state.
-- Generated entries include stable server names, launch command, arguments, env, and per-project runtime metadata.
-- Generation supports at least:
+- Generated entries include stable server names, launch command, arguments, env, and project-specific runtime metadata/services.
+- Generation supports:
   - Cursor
   - Claude
   - Antigravity
+  - IntelliJ
+- Generated config contains one managed section per client with all currently selected project services.
 
 ### 2. Export Targets and Update Policy
 
@@ -32,39 +34,63 @@ Acceptance criteria:
   - append missing entries
 - Preserve non-manager-managed config sections.
 
-### 3. Dashboard and Settings UX
+### 3. Deploy UX (Dashboard + Menu)
 
 Acceptance criteria:
-- Add a "Client MCP Integration" section in Settings.
-- Allow selecting target clients and output paths.
-- Provide "Generate" and "Regenerate" actions with success/error feedback.
-- Show last generation timestamp and per-client status.
-- Reuse Sprint 6.3 Settings metadata (auto-detected defaults, manual overrides, merge/backup policy flags) as input; deploy execution remains owned here in Sprint 7.
+- Add a primary deploy trigger in Dashboard (`Deploy to Agents`) and a matching menu action.
+- Deploy action generates and writes both MCP config and MCP-first rules for selected clients in one flow.
+- Provide preview/dry-run mode before write and post-deploy per-client status summary.
+- Show last deployment timestamp and per-client result state (success/fail/skipped).
+- Define deploy action semantics explicitly:
+  - `Deploy to Agents`: normal action (generate + write configs/rules).
+  - `Dry run`: simulate deploy, validate, and show what would change without writing files.
+  - `Preview`: show generated content/diff before writing.
+  - `Regenerate`: force rewrite of manager-owned managed sections, even if unchanged.
 
-### 4. Validation and Safety
+### 4. Settings Integration
+
+Acceptance criteria:
+- Keep a "Client MCP Integration" section in Settings for target selection, path overrides, merge mode, and backup policy.
+- Allow selecting target clients and output paths.
+- Reuse Sprint 6.3 Settings metadata (auto-detected defaults, manual overrides, merge/backup policy flags) as deploy input.
+- Settings does not replace Dashboard/Menu deploy trigger ownership.
+
+### 5. System Tray Close Behavior
+
+Acceptance criteria:
+- If `useSystemTray = true` and managed services are running, window close does not stop services; app hides/minimizes to tray.
+- Minimize action remains normal OS minimize behavior (taskbar/dock), not forced tray-hide.
+- If `useSystemTray = false`, close follows normal app close behavior.
+- Tray menu includes at least: `Show`, `Stop all services`, `Quit`.
+- `Quit` performs explicit shutdown flow (with confirmation when services are running, per product policy).
+
+### 6. Validation and Safety
 
 Acceptance criteria:
 - Validate generated configs against expected schema shape before writing.
 - Validate referenced runtime paths exist.
-- Warn when project runtime is unresolved or not running (if required by target client workflow).
+- Validate generated rule references against generated MCP server ids/targets.
+- Warn when project runtime is unresolved or service metadata is incomplete for selected targets.
 - Add dry-run diagnostics for permission/path errors.
 
-### 5. Documentation
+### 7. Documentation
 
 Acceptance criteria:
 - Add a short operational guide describing how each client loads MCP config.
-- Document regeneration workflow when projects are added/removed/renamed.
+- Document deploy/regenerate workflow when projects are added/removed/renamed.
 - Document limitations and fallback manual setup.
 
-### 6. Agent Rules Generation
+### 8. Agent Rules Generation
 
 Acceptance criteria:
-- Generate rule/policy artifacts for Cursor, Claude, and Antigravity from manager project state.
-- Rule content explicitly prefers MCP service/tool calls when capability exists, with filesystem `grep/find` as fallback only.
-- Support managed markers/blocks so regenerate updates only manager-owned rule sections.
-- Expose regenerate lifecycle in UI and docs (when to rerun, overwrite behavior, conflict handling).
+- Generate rule/policy artifacts for Cursor, Claude, Antigravity, and IntelliJ from manager project state.
+- Rule content explicitly enforces:
+  - MCP service/tool calls first when capability exists
+  - filesystem `grep/find` or manual refactor only as fallback
+- Support managed markers/blocks so redeploy updates only manager-owned rule sections.
+- Expose deploy/redeploy lifecycle in UI and docs (when to rerun, overwrite behavior, conflict handling).
 
-### 7. Rule Validation
+### 9. Rule Validation
 
 Acceptance criteria:
 - Validate generated rule syntax/shape before writing.
@@ -74,13 +100,11 @@ Acceptance criteria:
 ## Team Split
 
 - `platform-architect`: define generator interfaces and managed section merge strategy.
-- `tauri-engineer`: implement Rust generation/export commands and file safety checks.
-- `frontend-engineer`: settings UI for client targets, preview, and generate actions.
-- `qa-test-engineer`: cross-client validation matrix and regression tests for config merge/write logic.
-- `agent-integration-engineer`: map per-client agent rule formats and MCP-first policy templates.
+- `tauri-engineer`: implement Rust generation/deploy commands and file safety checks.
+- `frontend-engineer`: dashboard/menu deploy triggers plus settings target/path UX.
+- `qa-test-engineer`: cross-client validation matrix and regression tests for deploy/merge/write logic.
+- `agent-integration-engineer`: map per-client agent rule formats and MCP-first policy templates for all four clients.
 
 ## Deferred
 
-- Auto-reload/restart of external clients after config generation.
-- Cloud sync of generated MCP config.
-- One-click install of external client binaries.
+- none
