@@ -1,6 +1,9 @@
 use crate::{
     config::{AddProjectInput, ProjectRecord, UpdateSettingsInput},
-    manager_service::ManagerDashboard,
+    manager_service::{
+        ManagerDashboard, UpdateProjectPortInput, WorkspaceImportInput, WorkspaceImportResult,
+        WorkspaceProjectCandidate,
+    },
     runtime_manager::RuntimeStatusRecord,
     AppState,
 };
@@ -17,6 +20,43 @@ pub fn add_project(
     input: AddProjectInput,
 ) -> Result<ProjectRecord, String> {
     state.manager_service.add_project(input)
+}
+
+#[tauri::command]
+pub fn suggest_next_port(state: State<'_, AppState>) -> Result<u16, String> {
+    state.manager_service.suggest_next_port()
+}
+
+#[tauri::command]
+pub fn update_project_port(
+    state: State<'_, AppState>,
+    input: UpdateProjectPortInput,
+) -> Result<ManagerDashboard, String> {
+    state.manager_service.update_project_port(input)
+}
+
+#[tauri::command]
+pub fn delete_project(
+    state: State<'_, AppState>,
+    project_id: String,
+) -> Result<ManagerDashboard, String> {
+    state.manager_service.delete_project(&project_id)
+}
+
+#[tauri::command]
+pub fn discover_workspace_projects(
+    state: State<'_, AppState>,
+    workspace_file: String,
+) -> Result<Vec<WorkspaceProjectCandidate>, String> {
+    state.manager_service.discover_workspace_projects(&workspace_file)
+}
+
+#[tauri::command]
+pub fn import_workspace_projects(
+    state: State<'_, AppState>,
+    input: WorkspaceImportInput,
+) -> Result<WorkspaceImportResult, String> {
+    state.manager_service.import_workspace_projects(input)
 }
 
 #[tauri::command]

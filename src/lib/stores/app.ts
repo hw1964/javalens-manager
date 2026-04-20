@@ -1,6 +1,7 @@
 import { writable } from "svelte/store";
 import {
   addProject,
+  deleteProject,
   downloadOrUpdateJavalens,
   getDashboard,
   getRuntimeStatus,
@@ -83,6 +84,19 @@ export function createAppStore() {
 
     try {
       syncDashboard(await updateSettings(input));
+    } catch (error) {
+      update((state) => ({
+        ...state,
+        isBusy: false,
+        error: normalizeError(error)
+      }));
+    }
+  }
+
+  async function deleteProjectEntry(projectId: string) {
+    update((state) => ({ ...state, isBusy: true, error: undefined }));
+    try {
+      syncDashboard(await deleteProject(projectId));
     } catch (error) {
       update((state) => ({
         ...state,
@@ -183,6 +197,7 @@ export function createAppStore() {
     subscribe,
     load,
     addProjectEntry,
+    deleteProjectEntry,
     updateManagerSettings,
     downloadLatestRuntime,
     startProject,

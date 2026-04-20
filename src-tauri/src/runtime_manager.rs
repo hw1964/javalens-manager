@@ -23,6 +23,7 @@ pub enum RuntimePhase {
 pub struct RuntimeStatusRecord {
     pub project_id: String,
     pub phase: RuntimePhase,
+    pub assigned_port: u16,
     pub transport: String,
     pub pid: Option<u32>,
     pub workspace_dir: String,
@@ -36,12 +37,14 @@ pub struct RuntimeStatusRecord {
 impl RuntimeStatusRecord {
     pub fn unresolved(
         project_id: String,
+        assigned_port: u16,
         workspace_dir: String,
         runtime_label: String,
         detail: String,
     ) -> Self {
         Self {
             phase: RuntimePhase::Failed,
+            assigned_port,
             transport: "stdio".into(),
             pid: None,
             log_path: String::new(),
@@ -58,6 +61,7 @@ impl RuntimeStatusRecord {
 #[derive(Debug, Clone)]
 pub struct RuntimeReference {
     pub project_id: String,
+    pub assigned_port: u16,
     pub workspace_dir: String,
     pub runtime_label: String,
     pub resolved_jar_path: String,
@@ -145,6 +149,7 @@ impl RuntimeManager {
         let status = RuntimeStatusRecord {
             project_id: launch_request.reference.project_id.clone(),
             phase: RuntimePhase::Starting,
+            assigned_port: launch_request.reference.assigned_port,
             transport: "stdio".into(),
             pid: Some(child.id()),
             workspace_dir: launch_request.reference.workspace_dir.clone(),
@@ -188,6 +193,7 @@ impl RuntimeManager {
         let status = RuntimeStatusRecord {
             project_id: reference.project_id.clone(),
             phase: RuntimePhase::Stopped,
+            assigned_port: reference.assigned_port,
             transport: "stdio".into(),
             pid: None,
             workspace_dir: reference.workspace_dir.clone(),
@@ -219,6 +225,7 @@ impl RuntimeManager {
             .unwrap_or_else(|| RuntimeStatusRecord {
                 project_id: reference.project_id.clone(),
                 phase: RuntimePhase::Stopped,
+                assigned_port: reference.assigned_port,
                 transport: "stdio".into(),
                 pid: None,
                 workspace_dir: reference.workspace_dir.clone(),
@@ -228,6 +235,28 @@ impl RuntimeManager {
                 service_mode: "manager-process".into(),
                 detail: "Runtime has not been started yet.".into(),
             }))
+    }
+
+    pub fn remove_project_runtime(&self, project_id: &str) -> Result<(), String> {
+        if let Some(mut handle) = self
+            .handles
+            .lock()
+            .expect("runtime mutex poisoned")
+            .remove(project_id)
+        {
+            let _ = handle.child.kill();
+            let _ = handle.child.wait();
+        }
+
+        let snapshots = {
+            let mut snapshots = self
+                .snapshots
+                .lock()
+                .expect("runtime snapshot mutex poisoned");
+            snapshots.remove(project_id);
+            snapshots.clone()
+        };
+        write_runtime_state(&self.paths.runtime_state_file, &snapshots)
     }
 
     pub fn command_spec_for(&self, launch_request: &RuntimeLaunchRequest) -> CommandSpec {
@@ -278,6 +307,7 @@ impl RuntimeManager {
                         } else {
                             RuntimePhase::Failed
                         },
+                        assigned_port: reference.assigned_port,
                         transport: "stdio".into(),
                         pid: None,
                         workspace_dir: reference.workspace_dir.clone(),
@@ -297,6 +327,7 @@ impl RuntimeManager {
                     running_status = Some(RuntimeStatusRecord {
                         project_id: reference.project_id.clone(),
                         phase,
+                        assigned_port: reference.assigned_port,
                         transport: "stdio".into(),
                         pid: Some(handle.child.id()),
                         workspace_dir: reference.workspace_dir.clone(),
@@ -396,6 +427,7 @@ mod tests {
             project_path: "/projects/example-service".into(),
             reference: RuntimeReference {
                 project_id: "example-service-1".into(),
+                assigned_port: 11100,
                 workspace_dir: "/cache/javalens/example-service".into(),
                 runtime_label: "Managed JavaLens 1.2.0".into(),
                 resolved_jar_path: "/tools/javalens/javalens.jar".into(),
@@ -434,6 +466,7 @@ mod tests {
     fn unresolved_runtime_status_carries_runtime_label() {
         let status = RuntimeStatusRecord::unresolved(
             "project-1".into(),
+            11100,
             "/tmp/workspace".into(),
             "Managed JavaLens 1.2.0".into(),
             "Missing runtime".into(),

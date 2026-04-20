@@ -12,6 +12,7 @@
   export let onSelect: (projectId: string) => void;
   export let onStart: (projectId: string) => void;
   export let onStop: (projectId: string) => void;
+  export let onDelete: (projectId: string) => void;
   export let onRefresh: (projectId: string) => void;
 </script>
 
@@ -37,12 +38,16 @@
               <h3>{project.name}</h3>
               <p class="path">{project.projectPath}</p>
             </div>
-            <span class={`badge ${status?.phase ?? "stopped"}`}>{status?.phase ?? "stopped"}</span>
+            <span class={`badge ${status?.phase ?? "stopped"}`}>
+              <span class={`status-lamp ${status?.phase ?? "stopped"}`}></span>
+              {status?.phase ?? "stopped"}
+            </span>
           </button>
 
           <div class="meta">
             <span>Transport: {status?.transport ?? "stdio"}</span>
             <span>Runtime: {status?.runtimeLabel ?? "unknown"}</span>
+            <span>Port: {project.assignedPort}</span>
             <span>Workspace: {status?.workspaceDir ?? "unknown"}</span>
           </div>
 
@@ -55,6 +60,9 @@
             </button>
             <button disabled={disabled} on:click={() => onRefresh(project.id)} type="button">
               Refresh
+            </button>
+            <button disabled={disabled} on:click={() => onDelete(project.id)} type="button">
+              Delete
             </button>
           </div>
         </article>

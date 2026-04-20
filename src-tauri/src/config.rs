@@ -47,6 +47,14 @@ fn default_global_runtime_source() -> RuntimeSource {
     RuntimeSource::Managed
 }
 
+fn default_port_range_start() -> u16 {
+    11100
+}
+
+fn default_port_range_end() -> u16 {
+    11199
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagerSettings {
@@ -58,6 +66,10 @@ pub struct ManagerSettings {
     pub data_root: String,
     #[serde(default = "default_global_runtime_source")]
     pub global_runtime_source: RuntimeSource,
+    #[serde(default = "default_port_range_start")]
+    pub port_range_start: u16,
+    #[serde(default = "default_port_range_end")]
+    pub port_range_end: u16,
     pub last_release_check: Option<String>,
     pub last_seen_latest_version: Option<String>,
 }
@@ -71,6 +83,8 @@ impl ManagerSettings {
             manual_fallback_jar_path: None,
             data_root: display_path(&paths.default_data_root),
             global_runtime_source: RuntimeSource::Managed,
+            port_range_start: default_port_range_start(),
+            port_range_end: default_port_range_end(),
             last_release_check: None,
             last_seen_latest_version: None,
         }
@@ -107,6 +121,7 @@ pub struct ProjectRecord {
     pub id: String,
     pub name: String,
     pub project_path: String,
+    pub assigned_port: u16,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -114,6 +129,7 @@ pub struct ProjectRecord {
 pub struct AddProjectInput {
     pub name: String,
     pub project_path: String,
+    pub assigned_port: Option<u16>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -123,6 +139,8 @@ pub struct UpdateSettingsInput {
     pub auto_check_for_updates: bool,
     pub data_root: String,
     pub global_runtime_source: RuntimeSource,
+    pub port_range_start: u16,
+    pub port_range_end: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -283,6 +301,9 @@ impl ConfigStore {
     pub fn add_project(&self, input: AddProjectInput) -> Result<ProjectRecord, String> {
         validate_non_empty("name", &input.name)?;
         validate_non_empty("projectPath", &input.project_path)?;
+        let assigned_port = input
+            .assigned_port
+            .ok_or("assignedPort must be set before adding project")?;
 
         let project_slug = slugify(&input.name);
         let project_id = format!("{project_slug}-{}", current_timestamp_millis());
@@ -291,6 +312,7 @@ impl ConfigStore {
             id: project_id,
             name: input.name.trim().to_string(),
             project_path: input.project_path.trim().to_string(),
+            assigned_port,
         };
 
         let mut projects = self.projects.lock().expect("projects mutex poisoned");
@@ -309,6 +331,42 @@ impl ConfigStore {
         Ok(project)
     }
 
+    pub fn update_project_port(&self, project_id: &str, assigned_port: u16) -> Result<ProjectRecord, String> {
+        let mut projects = self.projects.lock().expect("projects mutex poisoned");
+        let project = projects
+            .projects
+            .iter_mut()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| format!("Unknown project id: {project_id}"))?;
+        project.assigned_port = assigned_port;
+        let updated = project.clone();
+        write_json(&self.paths.projects_file, &*projects)?;
+        Ok(updated)
+    }
+
+    pub fn delete_project(&self, project_id: &str) -> Result<ProjectRecord, String> {
+        let mut projects = self.projects.lock().expect("projects mutex poisoned");
+        let index = projects
+            .projects
+            .iter()
+            .position(|project| project.id == project_id)
+            .ok_or_else(|| format!("Unknown project id: {project_id}"))?;
+        let removed = projects.projects.remove(index);
+        write_json(&self.paths.projects_file, &*projects)?;
+        Ok(removed)
+    }
+
+    pub fn used_ports(&self, excluding_project_id: Option<&str>) -> Vec<u16> {
+        self.projects
+            .lock()
+            .expect("projects mutex poisoned")
+            .projects
+            .iter()
+            .filter(|project| excluding_project_id.map_or(true, |id| project.id != id))
+            .map(|project| project.assigned_port)
+            .collect()
+    }
+
     pub fn get_settings(&self) -> ManagerSettings {
         self.settings
             .lock()
@@ -320,15 +378,18 @@ impl ConfigStore {
         let mut settings = self.settings.lock().expect("settings mutex poisoned");
         settings.update_policy = input.update_policy;
         settings.auto_check_for_updates = input.auto_check_for_updates;
-        
+
         if input.data_root.trim().is_empty() {
             return Err("dataRoot must not be empty".into());
         }
         settings.data_root = input.data_root.trim().to_string();
-        
+
         validate_runtime_source(&input.global_runtime_source)?;
         settings.global_runtime_source = input.global_runtime_source;
-        
+        validate_port_range(input.port_range_start, input.port_range_end)?;
+        settings.port_range_start = input.port_range_start;
+        settings.port_range_end = input.port_range_end;
+
         write_json(&self.paths.settings_file, &*settings)?;
         Ok(settings.clone())
     }
@@ -358,6 +419,16 @@ fn validate_runtime_source(runtime_source: &RuntimeSource) -> Result<(), String>
     }
 }
 
+fn validate_port_range(start: u16, end: u16) -> Result<(), String> {
+    if start > end {
+        return Err("portRangeStart must be <= portRangeEnd".into());
+    }
+    if start < 1024 {
+        return Err("portRangeStart must be >= 1024".into());
+    }
+    Ok(())
+}
+
 fn read_projects(path: &Path) -> Result<ProjectsFile, String> {
     let contents = fs::read_to_string(path)
         .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
@@ -377,6 +448,7 @@ fn read_projects(path: &Path) -> Result<ProjectsFile, String> {
                 id: legacy_project.id,
                 name: legacy_project.name,
                 project_path: legacy_project.project_path,
+                assigned_port: default_port_range_start(),
             })
             .collect(),
     })
@@ -390,6 +462,10 @@ fn read_settings(path: &Path, paths: &AppPaths) -> Result<ManagerSettings, Strin
         .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
     if settings.data_root.trim().is_empty() {
         settings.data_root = display_path(&paths.default_data_root);
+    }
+    if validate_port_range(settings.port_range_start, settings.port_range_end).is_err() {
+        settings.port_range_start = default_port_range_start();
+        settings.port_range_end = default_port_range_end();
     }
     Ok(settings)
 }

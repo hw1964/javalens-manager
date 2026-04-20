@@ -23,6 +23,8 @@
   let updatePolicy: UpdatePolicy = "ask";
   let autoCheckForUpdates = true;
   let dataRoot = "";
+  let portRangeStart = 11100;
+  let portRangeEnd = 11199;
   let runtimeKind: "managed" | "localJar" = "managed";
   let localJarPath = "";
 
@@ -30,6 +32,8 @@
     updatePolicy = settings.updatePolicy;
     autoCheckForUpdates = settings.autoCheckForUpdates;
     dataRoot = settings.dataRoot;
+    portRangeStart = settings.portRangeStart;
+    portRangeEnd = settings.portRangeEnd;
     runtimeKind = settings.globalRuntimeSource.kind;
     if (settings.globalRuntimeSource.kind === "localJar") {
       localJarPath = settings.globalRuntimeSource.jarPath;
@@ -71,6 +75,8 @@
       updatePolicy,
       autoCheckForUpdates,
       dataRoot,
+      portRangeStart,
+      portRangeEnd,
       globalRuntimeSource:
         runtimeKind === "managed"
           ? {
@@ -151,6 +157,15 @@
       </div>
     </label>
   {/if}
+
+  <label class="field">
+    <span>Permitted port range</span>
+    <div class="field-row">
+      <input bind:value={portRangeStart} disabled={disabled} min="1024" step="1" type="number" />
+      <input bind:value={portRangeEnd} disabled={disabled} min="1024" step="1" type="number" />
+    </div>
+    <p class="hint">Manager assigns one project port inside this range.</p>
+  </label>
 
   <label class="field">
     <span>Update policy</span>

@@ -29,6 +29,8 @@ export interface ManagerSettings {
   manualFallbackJarPath?: string | null;
   dataRoot: string;
   globalRuntimeSource: RuntimeSource;
+  portRangeStart: number;
+  portRangeEnd: number;
   lastReleaseCheck?: string | null;
   lastSeenLatestVersion?: string | null;
 }
@@ -46,11 +48,13 @@ export interface ProjectRecord {
   id: string;
   name: string;
   projectPath: string;
+  assignedPort: number;
 }
 
 export interface AddProjectInput {
   name: string;
   projectPath: string;
+  assignedPort?: number;
 }
 
 export interface UpdateSettingsInput {
@@ -58,6 +62,8 @@ export interface UpdateSettingsInput {
   autoCheckForUpdates: boolean;
   dataRoot: string;
   globalRuntimeSource: RuntimeSource;
+  portRangeStart: number;
+  portRangeEnd: number;
 }
 
 export interface ManagedRuntimeRecord {
@@ -80,6 +86,7 @@ export interface ReleaseStatus {
 export interface RuntimeStatusRecord {
   projectId: string;
   phase: RuntimePhase;
+  assignedPort: number;
   transport: string;
   pid?: number | null;
   workspaceDir: string;
@@ -97,6 +104,28 @@ export interface ManagerDashboard {
   installedRuntime?: ManagedRuntimeRecord | null;
   projects: ProjectRecord[];
   runtimeStatuses: Record<string, RuntimeStatusRecord>;
+  suggestedPort?: number | null;
+}
+
+export interface UpdateProjectPortInput {
+  projectId: string;
+  assignedPort: number;
+}
+
+export interface WorkspaceProjectCandidate {
+  name: string;
+  projectPath: string;
+  kind: string;
+}
+
+export interface WorkspaceImportInput {
+  workspaceFile: string;
+  selectedPaths: string[];
+}
+
+export interface WorkspaceImportResult {
+  added: ProjectRecord[];
+  skipped: string[];
 }
 
 export function getDashboard(): Promise<ManagerDashboard> {
@@ -105,6 +134,26 @@ export function getDashboard(): Promise<ManagerDashboard> {
 
 export function addProject(input: AddProjectInput): Promise<ProjectRecord> {
   return invoke("add_project", { input });
+}
+
+export function suggestNextPort(): Promise<number> {
+  return invoke("suggest_next_port");
+}
+
+export function updateProjectPort(input: UpdateProjectPortInput): Promise<ManagerDashboard> {
+  return invoke("update_project_port", { input });
+}
+
+export function deleteProject(projectId: string): Promise<ManagerDashboard> {
+  return invoke("delete_project", { projectId });
+}
+
+export function discoverWorkspaceProjects(workspaceFile: string): Promise<WorkspaceProjectCandidate[]> {
+  return invoke("discover_workspace_projects", { workspaceFile });
+}
+
+export function importWorkspaceProjects(input: WorkspaceImportInput): Promise<WorkspaceImportResult> {
+  return invoke("import_workspace_projects", { input });
 }
 
 export function updateSettings(input: UpdateSettingsInput): Promise<ManagerDashboard> {

@@ -73,7 +73,9 @@
       <div class="stack">
         <ProjectForm
           disabled={$appStore.isBusy}
+          suggestedPort={$appStore.suggestedPort}
           on:submit={handleProjectSubmit}
+          on:imported={() => appStore.load()}
         />
       </div>
 
@@ -83,6 +85,7 @@
         onSelect={(projectId) => appStore.selectProject(projectId)}
         onStart={(projectId) => appStore.startProject(projectId)}
         onStop={(projectId) => appStore.stopProject(projectId)}
+        onDelete={(projectId) => appStore.deleteProjectEntry(projectId)}
         projects={$appStore.projects ?? []}
         runtimeStatuses={$appStore.runtimeStatuses ?? {}}
         selectedProjectId={$appStore.selectedProjectId}
@@ -91,7 +94,7 @@
 
     <section class="panel detail-panel">
       <div class="detail-header">
-        <h2>Selected Runtime</h2>
+        <h2>Selected Project Runtime</h2>
         {#if selectedProject}
           <button on:click={() => appStore.refreshProjectStatus(selectedProject.id)} type="button">
             Refresh status
@@ -100,6 +103,7 @@
       </div>
 
       {#if selectedProject && selectedStatus}
+        <p class="muted">Status and runtime details for the currently selected project.</p>
         <dl class="detail-grid">
           <div>
             <dt>Name</dt>
@@ -112,6 +116,10 @@
           <div>
             <dt>Project path</dt>
             <dd>{selectedProject.projectPath}</dd>
+          </div>
+          <div>
+            <dt>Assigned port</dt>
+            <dd>{selectedProject.assignedPort}</dd>
           </div>
           <div>
             <dt>Runtime source</dt>

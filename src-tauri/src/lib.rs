@@ -26,6 +26,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_dashboard,
             commands::add_project,
+            commands::suggest_next_port,
+            commands::update_project_port,
+            commands::delete_project,
+            commands::discover_workspace_projects,
+            commands::import_workspace_projects,
             commands::update_settings,
             commands::download_or_update_javalens,
             commands::start_runtime,
