@@ -84,78 +84,80 @@
         onRefresh={(projectId) => appStore.refreshProjectStatus(projectId)}
         onSelect={(projectId) => appStore.selectProject(projectId)}
         onStart={(projectId) => appStore.startProject(projectId)}
+        onStartAll={() => appStore.startAllProjects()}
         onStop={(projectId) => appStore.stopProject(projectId)}
         onDelete={(projectId) => appStore.deleteProjectEntry(projectId)}
+        onDeleteAll={() => appStore.deleteAllProjectEntries()}
         projects={$appStore.projects ?? []}
         runtimeStatuses={$appStore.runtimeStatuses ?? {}}
         selectedProjectId={$appStore.selectedProjectId}
       />
     </section>
 
-    <section class="panel detail-panel">
-      <div class="detail-header">
-        <h2>Selected Project Runtime</h2>
-        {#if selectedProject}
-          <button on:click={() => appStore.refreshProjectStatus(selectedProject.id)} type="button">
-            Refresh status
-          </button>
-        {/if}
-      </div>
-
-      {#if selectedProject && selectedStatus}
-        <p class="muted">Status and runtime details for the currently selected project.</p>
-        <dl class="detail-grid">
-          <div>
-            <dt>Name</dt>
-            <dd>{selectedProject.name}</dd>
-          </div>
-          <div>
-            <dt>Phase</dt>
-            <dd>{selectedStatus.phase}</dd>
-          </div>
-          <div>
-            <dt>Project path</dt>
-            <dd>{selectedProject.projectPath}</dd>
-          </div>
-          <div>
-            <dt>Assigned port</dt>
-            <dd>{selectedProject.assignedPort}</dd>
-          </div>
-          <div>
-            <dt>Runtime source</dt>
-            <dd>{selectedStatus.runtimeLabel}</dd>
-          </div>
-          <div>
-            <dt>Resolved JAR</dt>
-            <dd>{selectedStatus.resolvedJarPath || "Not resolved yet"}</dd>
-          </div>
-          <div>
-            <dt>Workspace</dt>
-            <dd>{selectedStatus.workspaceDir}</dd>
-          </div>
-          <div>
-            <dt>Log file</dt>
-            <dd>{selectedStatus.logPath || "Will be created on first launch"}</dd>
-          </div>
-          <div>
-            <dt>PID</dt>
-            <dd>{selectedStatus.pid ?? "Not running"}</dd>
-          </div>
-          <div>
-            <dt>Service mode</dt>
-            <dd>{selectedStatus.serviceMode}</dd>
-          </div>
-          <div>
-            <dt>Health detail</dt>
-            <dd>{selectedStatus.detail}</dd>
-          </div>
-        </dl>
-      {:else}
-        <div class="empty-state">
-          Choose a project to inspect its runtime selection and current status.
+    {#if ($appStore.projects ?? []).length > 0}
+      <section class="panel detail-panel">
+        <div class="detail-header">
+          <h2>Selected Project Runtime</h2>
+          {#if selectedProject}
+            <button on:click={() => appStore.refreshProjectStatus(selectedProject.id)} type="button">
+              Refresh status
+            </button>
+          {/if}
         </div>
-      {/if}
-    </section>
+
+        {#if selectedProject && selectedStatus}
+          <p class="muted">Status and runtime details for the currently selected project.</p>
+          <dl class="detail-grid">
+            <div>
+              <dt>Name</dt>
+              <dd>{selectedProject.name}</dd>
+            </div>
+            <div>
+              <dt>Phase</dt>
+              <dd>{selectedStatus.phase}</dd>
+            </div>
+            <div>
+              <dt>Project path</dt>
+              <dd>{selectedProject.projectPath}</dd>
+            </div>
+            <div>
+              <dt>Assigned port</dt>
+              <dd>{selectedProject.assignedPort}</dd>
+            </div>
+            <div>
+              <dt>Runtime source</dt>
+              <dd>{selectedStatus.runtimeLabel}</dd>
+            </div>
+            <div>
+              <dt>Resolved JAR</dt>
+              <dd>{selectedStatus.resolvedJarPath || "Not resolved yet"}</dd>
+            </div>
+            <div>
+              <dt>Workspace</dt>
+              <dd>{selectedStatus.workspaceDir}</dd>
+            </div>
+            <div>
+              <dt>Log file</dt>
+              <dd>{selectedStatus.logPath || "Will be created on first launch"}</dd>
+            </div>
+            <div>
+              <dt>PID</dt>
+              <dd>{selectedStatus.pid ?? "Not running"}</dd>
+            </div>
+            <div>
+              <dt>Service mode</dt>
+              <dd>{selectedStatus.serviceMode}</dd>
+            </div>
+            <div>
+              <dt>Health detail</dt>
+              <dd>{selectedStatus.detail}</dd>
+            </div>
+          </dl>
+        {:else}
+          <p class="muted">Choose a project to inspect runtime and health details.</p>
+        {/if}
+      </section>
+    {/if}
   {:else if currentView === 'settings'}
     <section class="layout">
       <div class="stack">

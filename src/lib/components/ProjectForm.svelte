@@ -132,6 +132,8 @@
       if (result.skipped.length > 0) {
         importMessage += ` Skipped ${result.skipped.length}.`;
       }
+      candidates = [];
+      selectedPaths = [];
       dispatch("imported");
     } catch (error) {
       importMessage = String(error);

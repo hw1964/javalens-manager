@@ -1,10 +1,12 @@
 import { writable } from "svelte/store";
 import {
   addProject,
+  deleteAllProjects,
   deleteProject,
   downloadOrUpdateJavalens,
   getDashboard,
   getRuntimeStatus,
+  startAllRuntimes,
   startRuntime,
   stopRuntime,
   updateSettings,
@@ -36,6 +38,10 @@ function normalizeError(error: unknown): string {
 
 export function createAppStore() {
   const { subscribe, update } = writable<AppState>(initialState);
+  const STATUS_POLL_INTERVAL_MS = 2500;
+  let pollTimer: ReturnType<typeof setInterval> | undefined;
+  let pollInFlight = false;
+  let visibilityHandlerAttached = false;
 
   function syncDashboard(dashboard: ManagerDashboard) {
     update((state) => ({
@@ -55,6 +61,7 @@ export function createAppStore() {
 
     try {
       syncDashboard(await getDashboard());
+      ensureStatusPolling();
     } catch (error) {
       update((state) => ({
         ...state,
@@ -106,6 +113,19 @@ export function createAppStore() {
     }
   }
 
+  async function deleteAllProjectEntries() {
+    update((state) => ({ ...state, isBusy: true, error: undefined }));
+    try {
+      syncDashboard(await deleteAllProjects());
+    } catch (error) {
+      update((state) => ({
+        ...state,
+        isBusy: false,
+        error: normalizeError(error)
+      }));
+    }
+  }
+
   async function downloadLatestRuntime() {
     update((state) => ({ ...state, isBusy: true, error: undefined }));
 
@@ -126,6 +146,19 @@ export function createAppStore() {
     try {
       const status = await startRuntime(projectId);
       mergeRuntimeStatus(projectId, status);
+    } catch (error) {
+      update((state) => ({
+        ...state,
+        isBusy: false,
+        error: normalizeError(error)
+      }));
+    }
+  }
+
+  async function startAllProjects() {
+    update((state) => ({ ...state, isBusy: true, error: undefined }));
+    try {
+      syncDashboard(await startAllRuntimes());
     } catch (error) {
       update((state) => ({
         ...state,
@@ -168,6 +201,68 @@ export function createAppStore() {
     }
   }
 
+  async function refreshAllProjectStatuses() {
+    if (pollInFlight || typeof document === "undefined" || document.hidden) {
+      return;
+    }
+
+    let projectIds: string[] = [];
+    update((state) => {
+      projectIds = (state.projects ?? []).map((project) => project.id);
+      return state;
+    });
+
+    if (projectIds.length === 0) {
+      return;
+    }
+
+    pollInFlight = true;
+    try {
+      const results = await Promise.all(
+        projectIds.map(async (projectId) => ({
+          projectId,
+          status: await getRuntimeStatus(projectId)
+        }))
+      );
+
+      update((state) => {
+        const runtimeStatuses = { ...(state.runtimeStatuses ?? {}) };
+        for (const result of results) {
+          runtimeStatuses[result.projectId] = result.status;
+        }
+
+        return {
+          ...state,
+          runtimeStatuses
+        };
+      });
+    } catch (error) {
+      update((state) => ({
+        ...state,
+        error: normalizeError(error)
+      }));
+    } finally {
+      pollInFlight = false;
+    }
+  }
+
+  function ensureStatusPolling() {
+    if (!pollTimer) {
+      pollTimer = setInterval(() => {
+        void refreshAllProjectStatuses();
+      }, STATUS_POLL_INTERVAL_MS);
+    }
+
+    if (!visibilityHandlerAttached && typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+          void refreshAllProjectStatuses();
+        }
+      });
+      visibilityHandlerAttached = true;
+    }
+  }
+
   function mergeRuntimeStatus(projectId: string, status: RuntimeStatusRecord) {
     update((state) => ({
       ...state,
@@ -198,9 +293,11 @@ export function createAppStore() {
     load,
     addProjectEntry,
     deleteProjectEntry,
+    deleteAllProjectEntries,
     updateManagerSettings,
     downloadLatestRuntime,
     startProject,
+    startAllProjects,
     stopProject,
     refreshProjectStatus,
     selectProject,

@@ -14,6 +14,14 @@
   export let onStop: (projectId: string) => void;
   export let onDelete: (projectId: string) => void;
   export let onRefresh: (projectId: string) => void;
+  export let onStartAll: () => void;
+  export let onDeleteAll: () => void;
+
+  function handleDeleteAll() {
+    if (confirm("Delete all projects and stop all runtimes?")) {
+      onDeleteAll();
+    }
+  }
 </script>
 
 <section class="panel stack">
@@ -22,6 +30,14 @@
     <p class="muted">
       Each entry maps to one JavaLens runtime over stdio, resolved through the manager service.
     </p>
+  </div>
+  <div class="project-list-toolbar">
+    <button disabled={disabled || projects.length === 0} on:click={() => onStartAll()} type="button">
+      Start all
+    </button>
+    <button disabled={disabled || projects.length === 0} on:click={handleDeleteAll} type="button">
+      Delete all
+    </button>
   </div>
 
   {#if projects.length === 0}

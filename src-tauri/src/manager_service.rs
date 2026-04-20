@@ -128,6 +128,44 @@ impl ManagerService {
         self.load_dashboard()
     }
 
+    pub fn start_all_runtimes(&self) -> Result<ManagerDashboard, String> {
+        let projects = self.config_store.list_projects();
+        let mut errors = Vec::new();
+
+        for project in projects {
+            match self.resolve_launch_request(&project) {
+                Ok(launch_request) => {
+                    if let Err(error) = self.runtime_manager.start_runtime(&launch_request) {
+                        errors.push(format!("{}: {error}", project.name));
+                    }
+                }
+                Err(error) => errors.push(format!("{}: {error}", project.name)),
+            }
+        }
+
+        if !errors.is_empty() {
+            return Err(format!("Some runtimes failed to start: {}", errors.join(" | ")));
+        }
+
+        self.load_dashboard()
+    }
+
+    pub fn delete_all_projects(&self) -> Result<ManagerDashboard, String> {
+        let project_ids: Vec<String> = self
+            .config_store
+            .list_projects()
+            .into_iter()
+            .map(|project| project.id)
+            .collect();
+
+        for project_id in project_ids {
+            self.runtime_manager.remove_project_runtime(&project_id)?;
+            self.config_store.delete_project(&project_id)?;
+        }
+
+        self.load_dashboard()
+    }
+
     pub fn update_settings(&self, input: UpdateSettingsInput) -> Result<ManagerDashboard, String> {
         self.config_store.update_settings(input)?;
         self.load_dashboard()

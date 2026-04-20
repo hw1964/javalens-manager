@@ -44,6 +44,16 @@ pub fn delete_project(
 }
 
 #[tauri::command]
+pub fn start_all_runtimes(state: State<'_, AppState>) -> Result<ManagerDashboard, String> {
+    state.manager_service.start_all_runtimes()
+}
+
+#[tauri::command]
+pub fn delete_all_projects(state: State<'_, AppState>) -> Result<ManagerDashboard, String> {
+    state.manager_service.delete_all_projects()
+}
+
+#[tauri::command]
 pub fn discover_workspace_projects(
     state: State<'_, AppState>,
     workspace_file: String,

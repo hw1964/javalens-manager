@@ -148,6 +148,14 @@ export function deleteProject(projectId: string): Promise<ManagerDashboard> {
   return invoke("delete_project", { projectId });
 }
 
+export function startAllRuntimes(): Promise<ManagerDashboard> {
+  return invoke("start_all_runtimes");
+}
+
+export function deleteAllProjects(): Promise<ManagerDashboard> {
+  return invoke("delete_all_projects");
+}
+
 export function discoverWorkspaceProjects(workspaceFile: string): Promise<WorkspaceProjectCandidate[]> {
   return invoke("discover_workspace_projects", { workspaceFile });
 }
