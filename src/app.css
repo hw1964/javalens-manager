@@ -555,6 +555,36 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.project-list-toolbar.segmented-actions {
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(30, 41, 59, 0.85);
+}
+
+.deploy-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  align-self: flex-start;
+}
+
+.deploy-toolbar-wrap {
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+}
+
+.deploy-toolbar-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #cbd5e1;
+}
+
+.deploy-toolbar.segmented-actions {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(37, 99, 235, 0.16);
+}
+
 .project-list-header {
   display: flex;
   align-items: flex-start;
@@ -591,8 +621,9 @@ button:disabled {
 }
 
 .project-list-panel {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
   min-height: 0;
   overflow: hidden;
 }
@@ -646,8 +677,8 @@ button:disabled {
   border-right: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 0;
   background: transparent;
-  padding: 0.4rem 0.62rem;
-  font-size: 0.82rem;
+  padding: 0.48rem 0.76rem;
+  font-size: 0.88rem;
 }
 
 .segmented-actions button:last-child {
@@ -656,6 +687,24 @@ button:disabled {
 
 .segmented-actions button:hover:not(:disabled) {
   background: rgba(148, 163, 184, 0.12);
+}
+
+/* Keep deploy controls visibly distinct from the generic segmented bars. */
+.deploy-toolbar.segmented-actions button {
+  min-height: 2rem;
+  padding: 0.46rem 0.8rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.deploy-toolbar.segmented-actions button:first-child {
+  background: rgba(59, 130, 246, 0.22);
+  color: #f8fafc;
+}
+
+.deploy-toolbar.segmented-actions button:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.25);
 }
 
 .project-card {
@@ -804,31 +853,31 @@ button:disabled {
 }
 
 .status-lamp {
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 0.92rem;
+  height: 0.92rem;
   border-radius: 999px;
-  background: #64748b;
-  box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.25);
+  background: #cbd5e1;
+  box-shadow: 0 0 0 3px rgba(203, 213, 225, 0.18);
 }
 
 .status-lamp.stopped {
-  background: #64748b;
-  box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.25);
+  background: #cbd5e1;
+  box-shadow: 0 0 0 2px rgba(203, 213, 225, 0.2);
 }
 
 .status-lamp.starting {
-  background: #fbbf24;
-  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.25);
+  background: #cbd5e1;
+  box-shadow: 0 0 0 2px rgba(203, 213, 225, 0.2);
 }
 
 .status-lamp.running {
-  background: #34d399;
-  box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.25);
+  background: #cbd5e1;
+  box-shadow: 0 0 0 2px rgba(203, 213, 225, 0.2);
 }
 
 .status-lamp.failed {
-  background: #f87171;
-  box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.25);
+  background: #cbd5e1;
+  box-shadow: 0 0 0 2px rgba(203, 213, 225, 0.2);
 }
 
 .badge.stopped {

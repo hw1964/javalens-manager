@@ -274,7 +274,11 @@
               onStopAll={() => appStore.stopAllProjects()}
               onDelete={(projectId) => appStore.deleteProjectEntry(projectId)}
               onDeleteAll={() => appStore.deleteAllProjectEntries()}
+              onDeploy={(mode) => appStore.deployToAgents(mode)}
               onUpdatePort={(projectId, assignedPort) => appStore.updateProjectPortEntry(projectId, assignedPort)}
+              deployBusy={$appStore.deployBusy ?? false}
+              deployError={$appStore.deployError}
+              lastDeployResult={$appStore.lastDeployResult}
               projects={$appStore.projects ?? []}
               projectErrors={$appStore.projectErrors ?? {}}
               runtimeStatuses={$appStore.runtimeStatuses ?? {}}

@@ -4,6 +4,7 @@ import {
   cleanGeneratedData,
   cleanLogs,
   cleanWorkspaces,
+  deployToAgents as deployToAgentsApi,
   deleteAllProjects,
   deleteProject,
   downloadOrUpdateJavalens,
@@ -19,6 +20,8 @@ import {
   updateSettings,
   type AddProjectInput,
   type CleanupSummary,
+  type DeployMode,
+  type DeployToAgentsResult,
   type ManagerDashboard,
   type ServiceProbeResult,
   type RuntimeStatusRecord,
@@ -34,6 +37,9 @@ interface AppState extends Partial<ManagerDashboard> {
   serviceProbeBusy?: boolean;
   serviceProbeError?: string;
   lastServiceProbe?: ServiceProbeResult;
+  deployBusy?: boolean;
+  deployError?: string;
+  lastDeployResult?: DeployToAgentsResult;
 }
 
 const initialState: AppState = {
@@ -199,6 +205,29 @@ export function createAppStore() {
         ...state,
         serviceProbeBusy: false,
         serviceProbeError: normalizeError(error)
+      }));
+    }
+  }
+
+  async function deployToAgents(mode: DeployMode) {
+    update((state) => ({
+      ...state,
+      deployBusy: true,
+      deployError: undefined
+    }));
+    try {
+      const result = await deployToAgentsApi({ mode });
+      update((state) => ({
+        ...state,
+        deployBusy: false,
+        deployError: undefined,
+        lastDeployResult: result
+      }));
+    } catch (error) {
+      update((state) => ({
+        ...state,
+        deployBusy: false,
+        deployError: normalizeError(error)
       }));
     }
   }
@@ -446,6 +475,13 @@ export function createAppStore() {
     }));
   }
 
+  function clearDeployError() {
+    update((state) => ({
+      ...state,
+      deployError: undefined
+    }));
+  }
+
   return {
     subscribe,
     load,
@@ -468,6 +504,8 @@ export function createAppStore() {
     cleanAllGeneratedData,
     clearCleanupSummary,
     probeServices,
-    clearServiceProbeError
+    deployToAgents,
+    clearServiceProbeError,
+    clearDeployError
   };
 }

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 export type RuntimePhase = "stopped" | "starting" | "running" | "failed";
 export type UpdatePolicy = "always" | "ask";
 export type McpMergeMode = "safeMerge" | "replaceManagedSection";
+export type DeployMode = "deploy" | "dryRun" | "preview" | "regenerate";
 export type ReleaseStatusKind =
   | "ready"
   | "missing"
@@ -157,6 +158,31 @@ export interface ProbeServiceEntry {
   description?: string | null;
 }
 
+export type DeployClientStatus = "success" | "skipped" | "failed";
+
+export interface DeployClientResult {
+  client: string;
+  targetPath: string;
+  status: DeployClientStatus;
+  message: string;
+  backupPath?: string | null;
+  changedSections: string[];
+  validationErrors: string[];
+  previewContent?: string | null;
+}
+
+export interface DeployToAgentsInput {
+  mode: DeployMode;
+}
+
+export interface DeployToAgentsResult {
+  mode: DeployMode;
+  ok: boolean;
+  detail: string;
+  durationMs: number;
+  clients: DeployClientResult[];
+}
+
 export interface UpdateProjectPortInput {
   projectId: string;
   assignedPort: number;
@@ -260,4 +286,8 @@ export function cleanGeneratedData(): Promise<CleanupSummary> {
 
 export function probeServices(): Promise<ServiceProbeResult> {
   return invoke("probe_services");
+}
+
+export function deployToAgents(input: DeployToAgentsInput): Promise<DeployToAgentsResult> {
+  return invoke("deploy_to_agents", { input });
 }

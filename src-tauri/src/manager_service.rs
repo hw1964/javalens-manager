@@ -1,6 +1,6 @@
 use crate::{
     config::{
-        display_path, AddProjectInput, BootstrapStatus, ConfigStore, ManagerSettings,
+        display_path, AddProjectInput, BootstrapStatus, ConfigStore, ManagerSettings, McpMergeMode,
         ProjectRecord, RuntimeSource, UpdateSettingsInput,
     },
     release_manager::{ManagedRuntimeRecord, ReleaseManager, ReleaseStatus},
@@ -102,10 +102,69 @@ pub struct ProbeServiceEntry {
     pub description: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DeployMode {
+    Deploy,
+    DryRun,
+    Preview,
+    Regenerate,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployToAgentsInput {
+    pub mode: DeployMode,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DeployClientStatus {
+    Success,
+    Skipped,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployClientResult {
+    pub client: String,
+    pub target_path: String,
+    pub status: DeployClientStatus,
+    pub message: String,
+    pub backup_path: Option<String>,
+    pub changed_sections: Vec<String>,
+    pub validation_errors: Vec<String>,
+    pub preview_content: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployToAgentsResult {
+    pub mode: DeployMode,
+    pub ok: bool,
+    pub detail: String,
+    pub duration_ms: u128,
+    pub clients: Vec<DeployClientResult>,
+}
+
 #[derive(Debug, Clone)]
 struct ProbeRuntime {
     jar_path: String,
     runtime_label: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManagedDeployServer {
+    id: String,
+    project_id: String,
+    project_name: String,
+    project_path: String,
+    assigned_port: u16,
+    command: String,
+    args: Vec<String>,
+    env: HashMap<String, String>,
 }
 
 pub struct ManagerService {
@@ -263,6 +322,86 @@ impl ManagerService {
     pub fn redetect_mcp_client_paths(&self) -> Result<ManagerDashboard, String> {
         self.config_store.redetect_mcp_client_paths()?;
         self.load_dashboard()
+    }
+
+    pub fn deploy_to_agents(
+        &self,
+        input: DeployToAgentsInput,
+    ) -> Result<DeployToAgentsResult, String> {
+        let started_at = Instant::now();
+        let settings = self.config_store.get_settings();
+        let projects = self.config_store.list_projects();
+        let servers = self.build_deploy_servers(&settings, &projects);
+
+        let clients = [
+            (
+                "cursor",
+                settings.mcp_client_paths.cursor.effective_path.clone(),
+            ),
+            (
+                "claude",
+                settings.mcp_client_paths.claude.effective_path.clone(),
+            ),
+            (
+                "antigravity",
+                settings.mcp_client_paths.antigravity.effective_path.clone(),
+            ),
+            (
+                "intellij",
+                settings.mcp_client_paths.intellij.effective_path.clone(),
+            ),
+        ];
+
+        let mut results = Vec::new();
+        for (client, path_opt) in clients {
+            let result = self.deploy_to_client(
+                client,
+                path_opt,
+                &servers,
+                &settings.mcp_merge_mode,
+                settings.mcp_backup_before_write,
+                &input.mode,
+            );
+            results.push(result);
+        }
+
+        let ok = results
+            .iter()
+            .all(|entry| !matches!(entry.status, DeployClientStatus::Failed));
+        let detail = if ok {
+            "Agent deploy completed.".to_string()
+        } else {
+            "Agent deploy completed with failures.".to_string()
+        };
+
+        Ok(DeployToAgentsResult {
+            mode: input.mode,
+            ok,
+            detail,
+            duration_ms: started_at.elapsed().as_millis(),
+            clients: results,
+        })
+    }
+
+    pub fn has_running_services(&self) -> bool {
+        let projects = self.config_store.list_projects();
+        for project in projects {
+            let Ok(reference) = self.resolve_runtime_reference(&project) else {
+                continue;
+            };
+            let Ok(status) = self.runtime_manager.get_runtime_status(&reference) else {
+                continue;
+            };
+            if matches!(status.phase, RuntimePhase::Running | RuntimePhase::Starting) {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn should_close_to_tray(&self) -> bool {
+        let settings = self.config_store.get_settings();
+        settings.use_system_tray && self.has_running_services()
     }
 
     pub fn download_or_update_javalens(&self) -> Result<ManagerDashboard, String> {
@@ -609,6 +748,198 @@ impl ManagerService {
             .collect();
         (settings.port_range_start..=settings.port_range_end)
             .find(|port| !used.contains(port) && is_port_bind_available(*port))
+    }
+
+    fn build_deploy_servers(
+        &self,
+        settings: &ManagerSettings,
+        projects: &[ProjectRecord],
+    ) -> Vec<ManagedDeployServer> {
+        let installed_runtime = self
+            .release_manager
+            .get_installed_runtime(settings)
+            .ok()
+            .flatten();
+
+        projects
+            .iter()
+            .filter_map(|project| {
+                let reference = self
+                    .resolve_runtime_reference_with(project, settings, installed_runtime.as_ref())
+                    .ok()?;
+                let server_id = format!("javalens-{}", project.id);
+                let mut env = HashMap::new();
+                env.insert("JAVALENS_PROJECT_ID".into(), project.id.clone());
+                env.insert("JAVALENS_ASSIGNED_PORT".into(), project.assigned_port.to_string());
+                env.insert("JAVALENS_PROJECT_PATH".into(), project.project_path.clone());
+
+                Some(ManagedDeployServer {
+                    id: server_id,
+                    project_id: project.id.clone(),
+                    project_name: project.name.clone(),
+                    project_path: project.project_path.clone(),
+                    assigned_port: project.assigned_port,
+                    command: "java".into(),
+                    args: vec![
+                        "-jar".into(),
+                        reference.resolved_jar_path.clone(),
+                        "-data".into(),
+                        reference.workspace_dir.clone(),
+                        project.project_path.clone(),
+                    ],
+                    env,
+                })
+            })
+            .collect()
+    }
+
+    fn deploy_to_client(
+        &self,
+        client: &str,
+        target_path: Option<String>,
+        servers: &[ManagedDeployServer],
+        merge_mode: &McpMergeMode,
+        backup_before_write: bool,
+        mode: &DeployMode,
+    ) -> DeployClientResult {
+        let Some(path) = target_path.and_then(normalize_optional_path) else {
+            return DeployClientResult {
+                client: client.to_string(),
+                target_path: "not configured".into(),
+                status: DeployClientStatus::Skipped,
+                message: "Client target path is not configured.".into(),
+                backup_path: None,
+                changed_sections: Vec::new(),
+                validation_errors: Vec::new(),
+                preview_content: None,
+            };
+        };
+
+        let mcp_json = build_client_mcp_json(client, servers);
+        let rule_body = build_rule_block(client, servers);
+
+        let mut validation_errors = Vec::new();
+        if servers.is_empty() {
+            validation_errors.push(
+                "No deployable services could be resolved from current project/runtime state."
+                    .to_string(),
+            );
+        }
+        if let Some(error) = validate_parent_directory(&path) {
+            validation_errors.push(error);
+        }
+
+        let preview_content = Some(format!(
+            "MCP config target: {path}\n\n{}\n\nRule target: {}\n\n{}",
+            mcp_json,
+            derive_rule_path(client, &path),
+            rule_body
+        ));
+
+        if !validation_errors.is_empty() {
+            return DeployClientResult {
+                client: client.to_string(),
+                target_path: path,
+                status: DeployClientStatus::Failed,
+                message: "Validation failed.".into(),
+                backup_path: None,
+                changed_sections: Vec::new(),
+                validation_errors,
+                preview_content: if matches!(mode, DeployMode::Preview | DeployMode::DryRun) {
+                    preview_content
+                } else {
+                    None
+                },
+            };
+        }
+
+        if matches!(mode, DeployMode::Preview) {
+            return DeployClientResult {
+                client: client.to_string(),
+                target_path: path,
+                status: DeployClientStatus::Success,
+                message: "Preview generated.".into(),
+                backup_path: None,
+                changed_sections: vec!["mcpConfig".into(), "rules".into()],
+                validation_errors: Vec::new(),
+                preview_content,
+            };
+        }
+
+        if matches!(mode, DeployMode::DryRun) {
+            return DeployClientResult {
+                client: client.to_string(),
+                target_path: path,
+                status: DeployClientStatus::Success,
+                message: "Dry run completed. No files were written.".into(),
+                backup_path: None,
+                changed_sections: vec!["mcpConfig".into(), "rules".into()],
+                validation_errors: Vec::new(),
+                preview_content: None,
+            };
+        }
+
+        let mut backup_path = None;
+        let mcp_write = write_managed_json_block(
+            &path,
+            client,
+            servers,
+            merge_mode,
+            backup_before_write,
+            matches!(mode, DeployMode::Regenerate),
+        );
+        let rule_path = derive_rule_path(client, &path);
+        let rule_write = write_managed_rule_block(
+            &rule_path,
+            &rule_body,
+            backup_before_write,
+            matches!(mode, DeployMode::Regenerate),
+        );
+
+        let mut changed_sections = Vec::new();
+        let mut errors = Vec::new();
+        if let Err(error) = mcp_write {
+            errors.push(error);
+        } else {
+            if let Err(error) = validate_written_client_config(client, &path, servers) {
+                errors.push(error);
+            } else {
+                changed_sections.push("mcpConfig".into());
+                if backup_before_write {
+                    backup_path = latest_backup_path(&path);
+                }
+            }
+        }
+
+        if let Err(error) = rule_write {
+            errors.push(error);
+        } else {
+            changed_sections.push("rules".into());
+        }
+
+        if errors.is_empty() {
+            DeployClientResult {
+                client: client.to_string(),
+                target_path: path,
+                status: DeployClientStatus::Success,
+                message: "Deploy successful.".into(),
+                backup_path,
+                changed_sections,
+                validation_errors: Vec::new(),
+                preview_content: None,
+            }
+        } else {
+            DeployClientResult {
+                client: client.to_string(),
+                target_path: path,
+                status: DeployClientStatus::Failed,
+                message: "Deploy failed.".into(),
+                backup_path,
+                changed_sections,
+                validation_errors: errors,
+                preview_content: None,
+            }
+        }
     }
 
     fn ensure_no_running_runtimes(&self) -> Result<(), String> {
@@ -1273,6 +1604,309 @@ fn read_workspace_roots(workspace_file: &str) -> Result<Vec<PathBuf>, String> {
         }
     }
     Ok(roots)
+}
+
+fn normalize_optional_path(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn validate_parent_directory(path: &str) -> Option<String> {
+    let path = PathBuf::from(path);
+    let Some(parent) = path.parent() else {
+        return Some(format!("target path has no parent directory: {}", path.display()));
+    };
+    if !parent.exists() {
+        // Parent can be created during write (create_dir_all), so this is valid.
+        return None;
+    }
+    if parent.is_dir() {
+        None
+    } else {
+        Some(format!(
+            "target parent path is not a directory: {}",
+            parent.display()
+        ))
+    }
+}
+
+fn derive_rule_path(client: &str, mcp_target_path: &str) -> String {
+    let mcp_path = PathBuf::from(mcp_target_path);
+    let parent = mcp_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    match client {
+        "cursor" => display_path(&parent.join("rules").join("javalens-manager.mdc")),
+        "claude" => display_path(&parent.join("CLAUDE.md")),
+        "antigravity" => display_path(&parent.join("AGENTS.md")),
+        "intellij" => display_path(&parent.join("javalens-manager-rules.md")),
+        _ => display_path(&parent.join("javalens-manager-rules.md")),
+    }
+}
+
+fn validate_written_client_config(
+    client: &str,
+    path: &str,
+    servers: &[ManagedDeployServer],
+) -> Result<(), String> {
+    let contents = fs::read_to_string(path)
+        .map_err(|error| format!("{client}: failed to read written config {path}: {error}"))?;
+    let value: serde_json::Value = serde_json::from_str(&contents)
+        .map_err(|error| format!("{client}: written config is invalid JSON in {path}: {error}"))?;
+    validate_client_config_shape(client, &value, servers)
+}
+
+fn validate_client_config_shape(
+    client: &str,
+    value: &serde_json::Value,
+    servers: &[ManagedDeployServer],
+) -> Result<(), String> {
+    let root = value
+        .as_object()
+        .ok_or_else(|| format!("{client}: config root is not an object"))?;
+    let mcp_servers = root
+        .get("mcpServers")
+        .and_then(|value| value.as_object())
+        .ok_or_else(|| format!("{client}: missing or invalid mcpServers object"))?;
+
+    for server in servers {
+        let server_value = mcp_servers.get(&server.id).ok_or_else(|| {
+            format!(
+                "{client}: managed server '{}' missing in mcpServers after deploy",
+                server.id
+            )
+        })?;
+        let server_obj = server_value.as_object().ok_or_else(|| {
+            format!(
+                "{client}: server '{}' entry is not a JSON object",
+                server.id
+            )
+        })?;
+
+        let command_valid = server_obj
+            .get("command")
+            .and_then(|value| value.as_str())
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false);
+        if !command_valid {
+            return Err(format!(
+                "{client}: server '{}' missing non-empty command",
+                server.id
+            ));
+        }
+
+        let args = server_obj
+            .get("args")
+            .and_then(|value| value.as_array())
+            .ok_or_else(|| format!("{client}: server '{}' missing args array", server.id))?;
+        if args.is_empty() {
+            return Err(format!("{client}: server '{}' has empty args array", server.id));
+        }
+        let args_all_strings = args
+            .iter()
+            .all(|arg| arg.as_str().map(|s| !s.trim().is_empty()).unwrap_or(false));
+        if !args_all_strings {
+            return Err(format!(
+                "{client}: server '{}' has non-string or empty args entries",
+                server.id
+            ));
+        }
+
+        if let Some(env) = server_obj.get("env") {
+            if !env.is_object() {
+                return Err(format!("{client}: server '{}' env must be an object", server.id));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn build_rule_block(client: &str, servers: &[ManagedDeployServer]) -> String {
+    let mut lines = vec![
+        format!("<!-- javalens-manager:{client}:start -->"),
+        "Policy: Prefer MCP service/tool calls before filesystem grep/find/manual refactor."
+            .to_string(),
+        "Use fallback filesystem/manual workflows only when MCP capability is unavailable."
+            .to_string(),
+        "Managed service ids:".to_string(),
+    ];
+    for server in servers {
+        lines.push(format!("- {}", server.id));
+    }
+    lines.push(format!("<!-- javalens-manager:{client}:end -->"));
+    lines.join("\n")
+}
+
+fn write_managed_json_block(
+    path: &str,
+    _client: &str,
+    servers: &[ManagedDeployServer],
+    merge_mode: &McpMergeMode,
+    backup_before_write: bool,
+    force_rewrite: bool,
+) -> Result<(), String> {
+    let path_buf = PathBuf::from(path);
+    let parent = path_buf
+        .parent()
+        .ok_or_else(|| format!("target path has no parent: {}", path_buf.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("failed to create parent {}: {error}", parent.display()))?;
+
+    let existing_contents = fs::read_to_string(&path_buf).ok();
+    let mut root_value = existing_contents
+        .as_deref()
+        .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if !root_value.is_object() {
+        root_value = serde_json::json!({});
+    }
+
+    let mut next_value = root_value;
+
+    // Merge managed JavaLens servers into the client's real MCP schema.
+    // Clients load "mcpServers", not our internal javalensManager metadata.
+    if let Some(object) = next_value.as_object_mut() {
+        let mut existing_servers = object
+            .get("mcpServers")
+            .and_then(|value| value.as_object())
+            .cloned()
+            .unwrap_or_default();
+
+        let incoming_ids: HashSet<String> = servers.iter().map(|server| server.id.clone()).collect();
+        let should_prune_managed = force_rewrite || matches!(merge_mode, McpMergeMode::ReplaceManagedSection);
+        if should_prune_managed {
+            existing_servers.retain(|key, _| !key.starts_with("javalens-"));
+        }
+
+        for server in servers {
+            let server_value = serde_json::json!({
+                "command": server.command,
+                "args": server.args,
+                "env": server.env
+            });
+            existing_servers.insert(server.id.clone(), server_value);
+        }
+
+        if force_rewrite {
+            existing_servers.retain(|key, _| !key.starts_with("javalens-") || incoming_ids.contains(key));
+        }
+
+        object.insert("mcpServers".into(), serde_json::Value::Object(existing_servers));
+        // Remove legacy payload from earlier deploy versions.
+        object.remove("javalensManager");
+    }
+
+    let next_json = serde_json::to_string_pretty(&next_value)
+        .map_err(|error| format!("failed serializing MCP config json: {error}"))?;
+
+    if !force_rewrite {
+        if let Some(existing) = existing_contents {
+            if existing.trim() == next_json.trim() {
+                return Ok(());
+            }
+        }
+    }
+
+    if backup_before_write && path_buf.exists() {
+        let backup_path = format!("{path}.bak-{}", crate::config::current_timestamp_string());
+        fs::copy(&path_buf, &backup_path).map_err(|error| {
+            format!(
+                "failed creating backup {} from {}: {error}",
+                backup_path,
+                path_buf.display()
+            )
+        })?;
+    }
+    fs::write(&path_buf, format!("{next_json}\n"))
+        .map_err(|error| format!("failed writing MCP config {}: {error}", path_buf.display()))
+}
+
+fn build_client_mcp_json(client: &str, servers: &[ManagedDeployServer]) -> serde_json::Value {
+    let _ = client;
+    let server_map: serde_json::Map<String, serde_json::Value> = servers
+        .iter()
+        .map(|server| {
+            (
+                server.id.clone(),
+                serde_json::json!({
+                    "command": server.command,
+                    "args": server.args,
+                    "env": server.env
+                }),
+            )
+        })
+        .collect();
+
+    serde_json::json!({
+        "mcpServers": server_map
+    })
+}
+
+fn write_managed_rule_block(
+    path: &str,
+    managed_rule_block: &str,
+    backup_before_write: bool,
+    force_rewrite: bool,
+) -> Result<(), String> {
+    let path_buf = PathBuf::from(path);
+    let parent = path_buf
+        .parent()
+        .ok_or_else(|| format!("rule target path has no parent: {}", path_buf.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("failed to create parent {}: {error}", parent.display()))?;
+
+    let existing = fs::read_to_string(&path_buf).unwrap_or_default();
+    let start_marker = managed_rule_block
+        .lines()
+        .next()
+        .ok_or("managed rule block missing start marker")?;
+    let end_marker = managed_rule_block
+        .lines()
+        .last()
+        .ok_or("managed rule block missing end marker")?;
+
+    let next = if let (Some(start_idx), Some(end_idx)) =
+        (existing.find(start_marker), existing.find(end_marker))
+    {
+        let end_inclusive = end_idx + end_marker.len();
+        format!(
+            "{}{}{}",
+            &existing[..start_idx],
+            managed_rule_block,
+            &existing[end_inclusive..]
+        )
+    } else if existing.trim().is_empty() {
+        managed_rule_block.to_string()
+    } else {
+        format!("{}\n\n{}", existing.trim_end(), managed_rule_block)
+    };
+
+    if !force_rewrite && existing.trim() == next.trim() {
+        return Ok(());
+    }
+
+    if backup_before_write && path_buf.exists() {
+        let backup_path = format!("{path}.bak-{}", crate::config::current_timestamp_string());
+        fs::copy(&path_buf, &backup_path).map_err(|error| {
+            format!(
+                "failed creating rule backup {} from {}: {error}",
+                backup_path,
+                path_buf.display()
+            )
+        })?;
+    }
+    fs::write(&path_buf, format!("{}\n", next.trim_end()))
+        .map_err(|error| format!("failed writing rule file {}: {error}", path_buf.display()))
+}
+
+fn latest_backup_path(_path: &str) -> Option<String> {
+    None
 }
 
 fn is_port_bind_available(port: u16) -> bool {

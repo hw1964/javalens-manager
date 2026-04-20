@@ -1,7 +1,8 @@
 use crate::{
     config::{AddProjectInput, ProjectRecord, UpdateSettingsInput},
     manager_service::{
-        CleanupSummary, ManagerDashboard, ServiceProbeResult, ServicesInventory,
+        CleanupSummary, DeployToAgentsInput, DeployToAgentsResult, ManagerDashboard,
+        ServiceProbeResult, ServicesInventory,
         UpdateProjectPortInput, WorkspaceImportInput, WorkspaceImportResult,
         WorkspaceProjectCandidate,
     },
@@ -142,4 +143,12 @@ pub fn clean_generated_data(state: State<'_, AppState>) -> Result<CleanupSummary
 #[tauri::command]
 pub fn probe_services(state: State<'_, AppState>) -> Result<ServiceProbeResult, String> {
     state.manager_service.probe_services()
+}
+
+#[tauri::command]
+pub fn deploy_to_agents(
+    state: State<'_, AppState>,
+    input: DeployToAgentsInput,
+) -> Result<DeployToAgentsResult, String> {
+    state.manager_service.deploy_to_agents(input)
 }

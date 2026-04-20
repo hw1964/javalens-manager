@@ -1,6 +1,8 @@
 <script lang="ts">
   import { afterUpdate } from "svelte";
   import type {
+    DeployMode,
+    DeployToAgentsResult,
     ProjectRecord,
     RuntimeStatusRecord
   } from "../api/tauri";
@@ -20,6 +22,10 @@
   export let onStopAll: () => void;
   export let onDeleteAll: () => void;
   export let onUpdatePort: (projectId: string, assignedPort: number) => void;
+  export let onDeploy: (mode: DeployMode) => void;
+  export let deployBusy = false;
+  export let deployError: string | undefined;
+  export let lastDeployResult: DeployToAgentsResult | undefined;
 
   let draftPorts: Record<string, string> = {};
   let portInputErrors: Record<string, string> = {};
@@ -39,6 +45,23 @@
     if (confirm("Delete all projects and stop all runtimes?")) {
       onDeleteAll();
     }
+  }
+
+  function deploySummary(result: DeployToAgentsResult): string {
+    const success = result.clients.filter((entry) => entry.status === "success").length;
+    const failed = result.clients.filter((entry) => entry.status === "failed").length;
+    const skipped = result.clients.filter((entry) => entry.status === "skipped").length;
+    return `${result.mode}: ${success} success, ${failed} failed, ${skipped} skipped`;
+  }
+
+  function deployFailureDetails(result: DeployToAgentsResult): string[] {
+    return result.clients
+      .filter((entry) => entry.status === "failed")
+      .map((entry) => {
+        const validation = entry.validationErrors?.[0];
+        const detail = validation || entry.message;
+        return `${entry.client}: ${detail}`;
+      });
   }
 
   function extractProjectError(status?: RuntimeStatusRecord): string | null {
@@ -153,6 +176,35 @@
       </button>
     </div>
   </div>
+
+  <div class="deploy-toolbar-wrap">
+    <span class="deploy-toolbar-label">Agent deploy</span>
+    <div class="deploy-toolbar segmented-actions">
+    <button disabled={disabled || deployBusy} on:click={() => onDeploy("deploy")} type="button">
+      {deployBusy ? "Deploying..." : "Deploy to Agents"}
+    </button>
+    <button disabled={disabled || deployBusy} on:click={() => onDeploy("dryRun")} type="button">
+      Dry run
+    </button>
+    <button disabled={disabled || deployBusy} on:click={() => onDeploy("preview")} type="button">
+      Preview
+    </button>
+    <button disabled={disabled || deployBusy} on:click={() => onDeploy("regenerate")} type="button">
+      Regenerate
+    </button>
+    </div>
+  </div>
+
+  {#if deployError}
+    <p class="project-error">{deployError}</p>
+  {:else if lastDeployResult}
+    <p class="hint">{deploySummary(lastDeployResult)}</p>
+    {#if deployFailureDetails(lastDeployResult).length > 0}
+      {#each deployFailureDetails(lastDeployResult) as failure}
+        <p class="project-error">{failure}</p>
+      {/each}
+    {/if}
+  {/if}
 
   {#if projects.length === 0}
     <div class="empty-state">
