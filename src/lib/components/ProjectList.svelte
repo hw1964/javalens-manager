@@ -107,6 +107,9 @@
       : aggregatePhase === "stopped"
         ? "all stopped"
         : "mixed";
+  $: totalProjects = projects.length;
+  $: runningProjects = projects.filter((project) => runtimeStatuses[project.id]?.phase === "running").length;
+  $: stoppedProjects = totalProjects - runningProjects;
 
   afterUpdate(() => {
     if (!selectedProjectId || selectedProjectId === lastAutoScrolledSelection) {
@@ -132,6 +135,11 @@
         </span>
       </h2>
       <p class="muted">Project services managed by the manager.</p>
+      <div class="project-summary-metrics">
+        <span class="metric-pill">Total {totalProjects}</span>
+        <span class="metric-pill running">Running {runningProjects}</span>
+        <span class="metric-pill stopped">Not running {stoppedProjects}</span>
+      </div>
     </div>
     <div class="project-list-toolbar segmented-actions">
       <button disabled={disabled || projects.length === 0} on:click={() => onStartAll()} type="button">

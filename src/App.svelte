@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import ProjectForm from "./lib/components/ProjectForm.svelte";
   import ProjectList from "./lib/components/ProjectList.svelte";
   import RuntimeSettings from "./lib/components/RuntimeSettings.svelte";
@@ -11,8 +11,19 @@
 
   const appStore = createAppStore();
   const managerBuildVersion = "20260420.01";
+  const MIN_LEFT_PANEL_WIDTH = 260;
+  const MAX_LEFT_PANEL_WIDTH = 560;
+  const MIN_RIGHT_PANEL_WIDTH = 420;
+  const SPLITTER_WIDTH = 12;
 
   let currentView: "dashboard" | "settings" = "dashboard";
+  let leftPanelWidth = 320;
+  let isDraggingSplitter = false;
+  let isCompactLayout = false;
+  let dashboardLayoutEl: HTMLElement | null = null;
+  let splitterPointerId: number | null = null;
+  let dragStartX = 0;
+  let dragStartWidth = 0;
 
   $: selectedProject = $appStore.projects?.find((project) => project.id === $appStore.selectedProjectId);
   $: selectedStatus = selectedProject
@@ -28,6 +39,23 @@
 
   onMount(() => {
     appStore.load();
+
+    if (typeof window !== "undefined") {
+      const mediaQuery = window.matchMedia("(max-width: 960px)");
+      const updateCompact = () => {
+        isCompactLayout = mediaQuery.matches;
+      };
+      updateCompact();
+      mediaQuery.addEventListener("change", updateCompact);
+
+      return () => {
+        mediaQuery.removeEventListener("change", updateCompact);
+      };
+    }
+  });
+
+  onDestroy(() => {
+    stopSplitterDrag();
   });
 
   function handleProjectSubmit(event: CustomEvent<AddProjectInput>) {
@@ -36,6 +64,61 @@
 
   function handleSettingsSave(event: CustomEvent<UpdateSettingsInput>) {
     appStore.updateManagerSettings(event.detail);
+  }
+
+  function clampLeftPanelWidth(width: number): number {
+    if (isCompactLayout) {
+      return leftPanelWidth;
+    }
+
+    const layoutWidth = dashboardLayoutEl?.clientWidth ?? window.innerWidth;
+    const maxAllowedByLayout = Math.max(
+      MIN_LEFT_PANEL_WIDTH,
+      layoutWidth - MIN_RIGHT_PANEL_WIDTH - SPLITTER_WIDTH
+    );
+    const maxWidth = Math.min(MAX_LEFT_PANEL_WIDTH, maxAllowedByLayout);
+    return Math.max(MIN_LEFT_PANEL_WIDTH, Math.min(width, maxWidth));
+  }
+
+  function stopSplitterDrag() {
+    if (!isDraggingSplitter) {
+      return;
+    }
+    isDraggingSplitter = false;
+    splitterPointerId = null;
+    window.removeEventListener("pointermove", handleSplitterPointerMove);
+    window.removeEventListener("pointerup", handleSplitterPointerUp);
+    window.removeEventListener("pointercancel", handleSplitterPointerUp);
+  }
+
+  function handleSplitterPointerMove(event: PointerEvent) {
+    if (!isDraggingSplitter) {
+      return;
+    }
+    const delta = event.clientX - dragStartX;
+    leftPanelWidth = clampLeftPanelWidth(dragStartWidth + delta);
+  }
+
+  function handleSplitterPointerUp(event: PointerEvent) {
+    if (splitterPointerId !== null && event.pointerId !== splitterPointerId) {
+      return;
+    }
+    stopSplitterDrag();
+  }
+
+  function handleSplitterPointerDown(event: PointerEvent) {
+    if (isCompactLayout) {
+      return;
+    }
+    event.preventDefault();
+    splitterPointerId = event.pointerId;
+    dragStartX = event.clientX;
+    dragStartWidth = leftPanelWidth;
+    isDraggingSplitter = true;
+    leftPanelWidth = clampLeftPanelWidth(leftPanelWidth);
+    window.addEventListener("pointermove", handleSplitterPointerMove);
+    window.addEventListener("pointerup", handleSplitterPointerUp);
+    window.addEventListener("pointercancel", handleSplitterPointerUp);
   }
 </script>
 
@@ -79,7 +162,11 @@
   {#if currentView === 'dashboard'}
     <section class="dashboard-main">
       <section class="dashboard-content">
-        <section class="layout dashboard-layout">
+        <section
+          bind:this={dashboardLayoutEl}
+          class={`layout dashboard-layout ${isDraggingSplitter ? "is-resizing" : ""}`}
+          style={`--left-panel-width: ${leftPanelWidth}px;`}
+        >
           <div class="dashboard-column">
             <ProjectForm
               disabled={$appStore.isBusy}
@@ -88,6 +175,14 @@
               on:imported={() => appStore.load()}
             />
           </div>
+
+          <div
+            aria-hidden={isCompactLayout}
+            class="dashboard-splitter"
+            on:pointerdown={handleSplitterPointerDown}
+            role="separator"
+            tabindex="-1"
+          ></div>
 
           <div class="dashboard-column">
             <ProjectList
