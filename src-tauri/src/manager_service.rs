@@ -1,7 +1,7 @@
 use crate::{
     config::{
-        display_path, AddProjectInput, BootstrapStatus, ConfigStore, ManagerSettings, McpMergeMode,
-        ProjectRecord, RuntimeSource, UpdateSettingsInput,
+        display_path, AddProjectInput, BootstrapStatus, ConfigStore, DeployTargetFlags,
+        ManagerSettings, McpMergeMode, ProjectRecord, RuntimeSource, UpdateSettingsInput,
     },
     release_manager::{ManagedRuntimeRecord, ReleaseManager, ReleaseStatus},
     runtime_manager::{
@@ -109,12 +109,15 @@ pub enum DeployMode {
     DryRun,
     Preview,
     Regenerate,
+    Delete,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeployToAgentsInput {
     pub mode: DeployMode,
+    #[serde(default)]
+    pub target_clients: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -165,6 +168,13 @@ struct ManagedDeployServer {
     command: String,
     args: Vec<String>,
     env: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+struct DeployClientTarget {
+    id: &'static str,
+    target_path: Option<String>,
+    enabled_by_settings: bool,
 }
 
 pub struct ManagerService {
@@ -332,31 +342,44 @@ impl ManagerService {
         let settings = self.config_store.get_settings();
         let projects = self.config_store.list_projects();
         let servers = self.build_deploy_servers(&settings, &projects);
-
-        let clients = [
-            (
-                "cursor",
-                settings.mcp_client_paths.cursor.effective_path.clone(),
-            ),
-            (
-                "claude",
-                settings.mcp_client_paths.claude.effective_path.clone(),
-            ),
-            (
-                "antigravity",
-                settings.mcp_client_paths.antigravity.effective_path.clone(),
-            ),
-            (
-                "intellij",
-                settings.mcp_client_paths.intellij.effective_path.clone(),
-            ),
-        ];
+        let clients = self.deploy_targets_for_settings(&settings);
+        let requested_targets: Option<HashSet<String>> =
+            input.target_clients.as_ref().map(|targets| {
+                targets
+                    .iter()
+                    .map(|target| target.trim().to_ascii_lowercase())
+                    .filter(|target| {
+                        matches!(
+                            target.as_str(),
+                            "cursor" | "claude" | "antigravity" | "intellij"
+                        )
+                    })
+                    .collect()
+            });
 
         let mut results = Vec::new();
-        for (client, path_opt) in clients {
+        for target in clients {
+            let is_selected = if let Some(requested) = requested_targets.as_ref() {
+                requested.contains(target.id)
+            } else {
+                target.enabled_by_settings
+            };
+            if !is_selected {
+                let reason = if requested_targets.is_some() {
+                    "Skipped: not selected in this deploy run."
+                } else {
+                    "Skipped: disabled in Settings deploy targets."
+                };
+                results.push(skipped_client_result(
+                    target.id,
+                    target.target_path.clone(),
+                    reason,
+                ));
+                continue;
+            }
             let result = self.deploy_to_client(
-                client,
-                path_opt,
+                target.id,
+                target.target_path.clone(),
                 &servers,
                 &settings.mcp_merge_mode,
                 settings.mcp_backup_before_write,
@@ -384,7 +407,12 @@ impl ManagerService {
     }
 
     pub fn has_running_services(&self) -> bool {
+        self.running_services_count() > 0
+    }
+
+    pub fn running_services_count(&self) -> usize {
         let projects = self.config_store.list_projects();
+        let mut running = 0usize;
         for project in projects {
             let Ok(reference) = self.resolve_runtime_reference(&project) else {
                 continue;
@@ -393,15 +421,19 @@ impl ManagerService {
                 continue;
             };
             if matches!(status.phase, RuntimePhase::Running | RuntimePhase::Starting) {
-                return true;
+                running += 1;
             }
         }
-        false
+        running
     }
 
     pub fn should_close_to_tray(&self) -> bool {
         let settings = self.config_store.get_settings();
         settings.use_system_tray && self.has_running_services()
+    }
+
+    pub fn is_system_tray_enabled(&self) -> bool {
+        self.config_store.get_settings().use_system_tray
     }
 
     pub fn download_or_update_javalens(&self) -> Result<ManagerDashboard, String> {
@@ -770,7 +802,10 @@ impl ManagerService {
                 let server_id = format!("javalens-{}", project.id);
                 let mut env = HashMap::new();
                 env.insert("JAVALENS_PROJECT_ID".into(), project.id.clone());
-                env.insert("JAVALENS_ASSIGNED_PORT".into(), project.assigned_port.to_string());
+                env.insert(
+                    "JAVALENS_ASSIGNED_PORT".into(),
+                    project.assigned_port.to_string(),
+                );
                 env.insert("JAVALENS_PROJECT_PATH".into(), project.project_path.clone());
 
                 Some(ManagedDeployServer {
@@ -791,6 +826,10 @@ impl ManagerService {
                 })
             })
             .collect()
+    }
+
+    fn deploy_targets_for_settings(&self, settings: &ManagerSettings) -> Vec<DeployClientTarget> {
+        deploy_targets_for_paths(&settings.deploy_targets, &settings.mcp_client_paths)
     }
 
     fn deploy_to_client(
@@ -817,9 +856,10 @@ impl ManagerService {
 
         let mcp_json = build_client_mcp_json(client, servers);
         let rule_body = build_rule_block(client, servers);
+        let rule_path = derive_rule_path(client, &path);
 
         let mut validation_errors = Vec::new();
-        if servers.is_empty() {
+        if servers.is_empty() && !matches!(mode, DeployMode::Delete) {
             validation_errors.push(
                 "No deployable services could be resolved from current project/runtime state."
                     .to_string(),
@@ -831,9 +871,7 @@ impl ManagerService {
 
         let preview_content = Some(format!(
             "MCP config target: {path}\n\n{}\n\nRule target: {}\n\n{}",
-            mcp_json,
-            derive_rule_path(client, &path),
-            rule_body
+            mcp_json, rule_path, rule_body
         ));
 
         if !validation_errors.is_empty() {
@@ -879,6 +917,70 @@ impl ManagerService {
             };
         }
 
+        if matches!(mode, DeployMode::Delete) {
+            let mut backup_path = None;
+            let mut changed_sections = Vec::new();
+            let mut errors = Vec::new();
+
+            match remove_managed_json_block(&path, backup_before_write) {
+                Ok(changed) => {
+                    if changed {
+                        changed_sections.push("mcpConfig".into());
+                        if backup_before_write {
+                            backup_path = latest_backup_path(&path);
+                        }
+                    }
+                }
+                Err(error) => errors.push(error),
+            }
+
+            match remove_managed_rule_block(&rule_path, client, backup_before_write) {
+                Ok(changed) => {
+                    if changed {
+                        changed_sections.push("rules".into());
+                    }
+                }
+                Err(error) => errors.push(error),
+            }
+
+            if !errors.is_empty() {
+                return DeployClientResult {
+                    client: client.to_string(),
+                    target_path: path,
+                    status: DeployClientStatus::Failed,
+                    message: "Delete failed.".into(),
+                    backup_path,
+                    changed_sections,
+                    validation_errors: errors,
+                    preview_content: None,
+                };
+            }
+
+            if changed_sections.is_empty() {
+                return DeployClientResult {
+                    client: client.to_string(),
+                    target_path: path,
+                    status: DeployClientStatus::Skipped,
+                    message: "No managed JavaLens deploy sections found.".into(),
+                    backup_path: None,
+                    changed_sections,
+                    validation_errors: Vec::new(),
+                    preview_content: None,
+                };
+            }
+
+            return DeployClientResult {
+                client: client.to_string(),
+                target_path: path,
+                status: DeployClientStatus::Success,
+                message: "Delete successful. Removed managed JavaLens deploy sections.".into(),
+                backup_path,
+                changed_sections,
+                validation_errors: Vec::new(),
+                preview_content: None,
+            };
+        }
+
         let mut backup_path = None;
         let mcp_write = write_managed_json_block(
             &path,
@@ -888,7 +990,6 @@ impl ManagerService {
             backup_before_write,
             matches!(mode, DeployMode::Regenerate),
         );
-        let rule_path = derive_rule_path(client, &path);
         let rule_write = write_managed_rule_block(
             &rule_path,
             &rule_body,
@@ -1615,10 +1716,60 @@ fn normalize_optional_path(value: String) -> Option<String> {
     }
 }
 
+fn deploy_targets_for_paths(
+    flags: &DeployTargetFlags,
+    paths: &crate::config::McpClientPaths,
+) -> Vec<DeployClientTarget> {
+    vec![
+        DeployClientTarget {
+            id: "cursor",
+            target_path: paths.cursor.effective_path.clone(),
+            enabled_by_settings: flags.cursor,
+        },
+        DeployClientTarget {
+            id: "claude",
+            target_path: paths.claude.effective_path.clone(),
+            enabled_by_settings: flags.claude,
+        },
+        DeployClientTarget {
+            id: "antigravity",
+            target_path: paths.antigravity.effective_path.clone(),
+            enabled_by_settings: flags.antigravity,
+        },
+        DeployClientTarget {
+            id: "intellij",
+            target_path: paths.intellij.effective_path.clone(),
+            enabled_by_settings: flags.intellij,
+        },
+    ]
+}
+
+fn skipped_client_result(
+    client: &str,
+    target_path: Option<String>,
+    message: &str,
+) -> DeployClientResult {
+    DeployClientResult {
+        client: client.to_string(),
+        target_path: target_path
+            .and_then(normalize_optional_path)
+            .unwrap_or_else(|| "not configured".into()),
+        status: DeployClientStatus::Skipped,
+        message: message.to_string(),
+        backup_path: None,
+        changed_sections: Vec::new(),
+        validation_errors: Vec::new(),
+        preview_content: None,
+    }
+}
+
 fn validate_parent_directory(path: &str) -> Option<String> {
     let path = PathBuf::from(path);
     let Some(parent) = path.parent() else {
-        return Some(format!("target path has no parent directory: {}", path.display()));
+        return Some(format!(
+            "target path has no parent directory: {}",
+            path.display()
+        ));
     };
     if !parent.exists() {
         // Parent can be created during write (create_dir_all), so this is valid.
@@ -1705,7 +1856,10 @@ fn validate_client_config_shape(
             .and_then(|value| value.as_array())
             .ok_or_else(|| format!("{client}: server '{}' missing args array", server.id))?;
         if args.is_empty() {
-            return Err(format!("{client}: server '{}' has empty args array", server.id));
+            return Err(format!(
+                "{client}: server '{}' has empty args array",
+                server.id
+            ));
         }
         let args_all_strings = args
             .iter()
@@ -1719,7 +1873,10 @@ fn validate_client_config_shape(
 
         if let Some(env) = server_obj.get("env") {
             if !env.is_object() {
-                return Err(format!("{client}: server '{}' env must be an object", server.id));
+                return Err(format!(
+                    "{client}: server '{}' env must be an object",
+                    server.id
+                ));
             }
         }
     }
@@ -1778,8 +1935,10 @@ fn write_managed_json_block(
             .cloned()
             .unwrap_or_default();
 
-        let incoming_ids: HashSet<String> = servers.iter().map(|server| server.id.clone()).collect();
-        let should_prune_managed = force_rewrite || matches!(merge_mode, McpMergeMode::ReplaceManagedSection);
+        let incoming_ids: HashSet<String> =
+            servers.iter().map(|server| server.id.clone()).collect();
+        let should_prune_managed =
+            force_rewrite || matches!(merge_mode, McpMergeMode::ReplaceManagedSection);
         if should_prune_managed {
             existing_servers.retain(|key, _| !key.starts_with("javalens-"));
         }
@@ -1794,10 +1953,14 @@ fn write_managed_json_block(
         }
 
         if force_rewrite {
-            existing_servers.retain(|key, _| !key.starts_with("javalens-") || incoming_ids.contains(key));
+            existing_servers
+                .retain(|key, _| !key.starts_with("javalens-") || incoming_ids.contains(key));
         }
 
-        object.insert("mcpServers".into(), serde_json::Value::Object(existing_servers));
+        object.insert(
+            "mcpServers".into(),
+            serde_json::Value::Object(existing_servers),
+        );
         // Remove legacy payload from earlier deploy versions.
         object.remove("javalensManager");
     }
@@ -1825,6 +1988,64 @@ fn write_managed_json_block(
     }
     fs::write(&path_buf, format!("{next_json}\n"))
         .map_err(|error| format!("failed writing MCP config {}: {error}", path_buf.display()))
+}
+
+fn remove_managed_json_block(path: &str, backup_before_write: bool) -> Result<bool, String> {
+    let path_buf = PathBuf::from(path);
+    if !path_buf.exists() {
+        return Ok(false);
+    }
+
+    let existing_contents = fs::read_to_string(&path_buf)
+        .map_err(|error| format!("failed to read MCP config {}: {error}", path_buf.display()))?;
+    let mut root_value: serde_json::Value =
+        serde_json::from_str(&existing_contents).map_err(|error| {
+            format!(
+                "failed parsing MCP config {} as JSON: {error}",
+                path_buf.display()
+            )
+        })?;
+    if !root_value.is_object() {
+        return Ok(false);
+    }
+
+    let mut changed = false;
+    if let Some(object) = root_value.as_object_mut() {
+        let mut existing_servers = object
+            .get("mcpServers")
+            .and_then(|value| value.as_object())
+            .cloned()
+            .unwrap_or_default();
+        let previous_len = existing_servers.len();
+        existing_servers.retain(|key, _| !key.starts_with("javalens-"));
+        changed |= existing_servers.len() != previous_len;
+        object.insert(
+            "mcpServers".into(),
+            serde_json::Value::Object(existing_servers),
+        );
+        changed |= object.remove("javalensManager").is_some();
+    }
+
+    if !changed {
+        return Ok(false);
+    }
+
+    if backup_before_write && path_buf.exists() {
+        let backup_path = format!("{path}.bak-{}", crate::config::current_timestamp_string());
+        fs::copy(&path_buf, &backup_path).map_err(|error| {
+            format!(
+                "failed creating backup {} from {}: {error}",
+                backup_path,
+                path_buf.display()
+            )
+        })?;
+    }
+
+    let next_json = serde_json::to_string_pretty(&root_value)
+        .map_err(|error| format!("failed serializing MCP config json: {error}"))?;
+    fs::write(&path_buf, format!("{next_json}\n"))
+        .map_err(|error| format!("failed writing MCP config {}: {error}", path_buf.display()))?;
+    Ok(true)
 }
 
 fn build_client_mcp_json(client: &str, servers: &[ManagedDeployServer]) -> serde_json::Value {
@@ -1903,6 +2124,55 @@ fn write_managed_rule_block(
     }
     fs::write(&path_buf, format!("{}\n", next.trim_end()))
         .map_err(|error| format!("failed writing rule file {}: {error}", path_buf.display()))
+}
+
+fn remove_managed_rule_block(
+    path: &str,
+    client: &str,
+    backup_before_write: bool,
+) -> Result<bool, String> {
+    let path_buf = PathBuf::from(path);
+    if !path_buf.exists() {
+        return Ok(false);
+    }
+    let existing = fs::read_to_string(&path_buf)
+        .map_err(|error| format!("failed to read rule file {}: {error}", path_buf.display()))?;
+    let start_marker = format!("<!-- javalens-manager:{client}:start -->");
+    let end_marker = format!("<!-- javalens-manager:{client}:end -->");
+
+    let Some(start_idx) = existing.find(&start_marker) else {
+        return Ok(false);
+    };
+    let Some(rel_end_idx) = existing[start_idx..].find(&end_marker) else {
+        return Ok(false);
+    };
+    let end_idx = start_idx + rel_end_idx + end_marker.len();
+
+    let mut next = format!("{}{}", &existing[..start_idx], &existing[end_idx..]);
+    while next.contains("\n\n\n") {
+        next = next.replace("\n\n\n", "\n\n");
+    }
+    let next = next.trim().to_string();
+
+    if backup_before_write && path_buf.exists() {
+        let backup_path = format!("{path}.bak-{}", crate::config::current_timestamp_string());
+        fs::copy(&path_buf, &backup_path).map_err(|error| {
+            format!(
+                "failed creating rule backup {} from {}: {error}",
+                backup_path,
+                path_buf.display()
+            )
+        })?;
+    }
+
+    if next.is_empty() {
+        fs::write(&path_buf, "")
+            .map_err(|error| format!("failed writing rule file {}: {error}", path_buf.display()))?;
+    } else {
+        fs::write(&path_buf, format!("{next}\n"))
+            .map_err(|error| format!("failed writing rule file {}: {error}", path_buf.display()))?;
+    }
+    Ok(true)
 }
 
 fn latest_backup_path(_path: &str) -> Option<String> {

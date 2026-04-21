@@ -209,14 +209,17 @@ export function createAppStore() {
     }
   }
 
-  async function deployToAgents(mode: DeployMode) {
+  async function deployToAgents(mode: DeployMode, targetClients?: string[]) {
     update((state) => ({
       ...state,
       deployBusy: true,
       deployError: undefined
     }));
     try {
-      const result = await deployToAgentsApi({ mode });
+      const result = await deployToAgentsApi({
+        mode,
+        targetClients
+      });
       update((state) => ({
         ...state,
         deployBusy: false,

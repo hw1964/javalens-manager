@@ -34,35 +34,40 @@ Acceptance criteria:
   - append missing entries
 - Preserve non-manager-managed config sections.
 
-### 3. Deploy UX (Dashboard + Menu)
+### 3. Deploy UX (Dashboard)
 
 Acceptance criteria:
-- Add a primary deploy trigger in Dashboard (`Deploy to Agents`) and a matching menu action.
+- Add a primary deploy trigger in Dashboard (`Deploy to Agents`).
 - Deploy action generates and writes both MCP config and MCP-first rules for selected clients in one flow.
 - Provide preview/dry-run mode before write and post-deploy per-client status summary.
-- Show last deployment timestamp and per-client result state (success/fail/skipped).
+- Show post-deploy coverage as `deployed X/Y clients` plus per-client state (success/fail/skipped with reason).
 - Define deploy action semantics explicitly:
   - `Deploy to Agents`: normal action (generate + write configs/rules).
   - `Dry run`: simulate deploy, validate, and show what would change without writing files.
   - `Preview`: show generated content/diff before writing.
   - `Regenerate`: force rewrite of manager-owned managed sections, even if unchanged.
+- Include a compact per-run targets picker in Dashboard:
+  - Defaults to Settings deploy flags.
+  - Supports one-run overrides without mutating saved Settings.
 
 ### 4. Settings Integration
 
 Acceptance criteria:
-- Keep a "Client MCP Integration" section in Settings for target selection, path overrides, merge mode, and backup policy.
-- Allow selecting target clients and output paths.
+- Keep a "Client MCP Integration" section in Settings for deploy flags, path overrides, merge mode, and backup policy.
+- Allow setting default deploy participation per client (Cursor/Claude/Antigravity/IntelliJ) and output paths.
 - Reuse Sprint 6.3 Settings metadata (auto-detected defaults, manual overrides, merge/backup policy flags) as deploy input.
-- Settings does not replace Dashboard/Menu deploy trigger ownership.
+- Settings does not replace Dashboard deploy trigger ownership.
 
 ### 5. System Tray Close Behavior
 
 Acceptance criteria:
 - If `useSystemTray = true` and managed services are running, window close does not stop services; app hides/minimizes to tray.
 - Minimize action remains normal OS minimize behavior (taskbar/dock), not forced tray-hide.
-- If `useSystemTray = false`, close follows normal app close behavior.
+- If `useSystemTray = false`, close prompts for confirmation before shutdown.
 - Tray menu includes at least: `Show`, `Stop all services`, `Quit`.
-- `Quit` performs explicit shutdown flow (with confirmation when services are running, per product policy).
+- `Quit` performs explicit shutdown flow with confirmation:
+  - no running services -> confirm shutdown.
+  - running services -> explicit stop-and-quit or cancel/hide-to-tray path.
 
 ### 6. Validation and Safety
 

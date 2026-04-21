@@ -289,6 +289,12 @@ button {
   margin-top: 0.15rem;
 }
 
+.machine-control-card.diagnostics-card .actions.compact button {
+  padding: 0.2rem 0.42rem;
+  font-size: 0.72rem;
+  line-height: 1.1;
+}
+
 .machine-control-card h4 {
   margin: 0;
   font-size: 0.88rem;
@@ -400,10 +406,28 @@ button {
 }
 
 .mcp-client-heading {
+  display: block;
+}
+
+.mcp-client-title-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 0.5rem;
+}
+
+.mcp-client-title-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.mcp-deploy-checkbox {
+  margin: 0;
+  font-size: 0.74rem;
+  color: #cbd5e1;
+  gap: 0.25rem;
+  white-space: nowrap;
 }
 
 .mcp-current-path {
@@ -562,8 +586,9 @@ button:disabled {
 
 .deploy-toolbar {
   display: flex;
-  justify-content: flex-start;
-  align-self: flex-start;
+  justify-content: stretch;
+  align-self: stretch;
+  width: 100%;
 }
 
 .deploy-toolbar-wrap {
@@ -583,6 +608,9 @@ button:disabled {
 .deploy-toolbar.segmented-actions {
   border-color: rgba(96, 165, 250, 0.45);
   background: rgba(37, 99, 235, 0.16);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: 100%;
 }
 
 .project-list-header {
@@ -696,15 +724,36 @@ button:disabled {
   font-size: 0.9rem;
   font-weight: 600;
   color: #e2e8f0;
+  width: 100%;
+  justify-content: center;
 }
 
-.deploy-toolbar.segmented-actions button:first-child {
+.deploy-toolbar.segmented-actions button.active {
   background: rgba(59, 130, 246, 0.22);
   color: #f8fafc;
 }
 
 .deploy-toolbar.segmented-actions button:hover:not(:disabled) {
   background: rgba(59, 130, 246, 0.25);
+}
+
+.deploy-target-picker {
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  border-radius: 12px;
+  padding: 0.6rem 0.7rem;
+  background: rgba(15, 23, 42, 0.58);
+  display: grid;
+  gap: 0.45rem;
+  width: 100%;
+  max-width: none;
+}
+
+.deploy-target-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.24rem 1.25rem;
 }
 
 .project-card {

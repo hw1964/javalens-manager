@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 export type RuntimePhase = "stopped" | "starting" | "running" | "failed";
 export type UpdatePolicy = "always" | "ask";
 export type McpMergeMode = "safeMerge" | "replaceManagedSection";
-export type DeployMode = "deploy" | "dryRun" | "preview" | "regenerate";
+export type DeployMode = "deploy" | "dryRun" | "preview" | "regenerate" | "delete";
 export type ReleaseStatusKind =
   | "ready"
   | "missing"
@@ -37,6 +37,7 @@ export interface ManagerSettings {
   mcpClientPaths: McpClientPaths;
   mcpMergeMode: McpMergeMode;
   mcpBackupBeforeWrite: boolean;
+  deployTargets: DeployTargetFlags;
   lastReleaseCheck?: string | null;
   lastSeenLatestVersion?: string | null;
 }
@@ -52,6 +53,13 @@ export interface McpClientPaths {
   claude: McpClientPathEntry;
   antigravity: McpClientPathEntry;
   intellij: McpClientPathEntry;
+}
+
+export interface DeployTargetFlags {
+  cursor: boolean;
+  claude: boolean;
+  antigravity: boolean;
+  intellij: boolean;
 }
 
 export type RuntimeSource =
@@ -87,6 +95,7 @@ export interface UpdateSettingsInput {
   mcpClientPaths: McpClientPaths;
   mcpMergeMode: McpMergeMode;
   mcpBackupBeforeWrite: boolean;
+  deployTargets: DeployTargetFlags;
 }
 
 export interface ManagedRuntimeRecord {
@@ -173,6 +182,7 @@ export interface DeployClientResult {
 
 export interface DeployToAgentsInput {
   mode: DeployMode;
+  targetClients?: string[] | null;
 }
 
 export interface DeployToAgentsResult {
@@ -182,6 +192,13 @@ export interface DeployToAgentsResult {
   durationMs: number;
   clients: DeployClientResult[];
 }
+
+export interface QuitPromptContext {
+  runningServices: number;
+  trayEnabled: boolean;
+}
+
+export type QuitAction = "cancel" | "hideToTray" | "stopAndQuit" | "quit";
 
 export interface UpdateProjectPortInput {
   projectId: string;
@@ -290,4 +307,12 @@ export function probeServices(): Promise<ServiceProbeResult> {
 
 export function deployToAgents(input: DeployToAgentsInput): Promise<DeployToAgentsResult> {
   return invoke("deploy_to_agents", { input });
+}
+
+export function getQuitPromptContext(): Promise<QuitPromptContext> {
+  return invoke("get_quit_prompt_context");
+}
+
+export function performQuitAction(action: QuitAction): Promise<void> {
+  return invoke("perform_quit_action", { action });
 }

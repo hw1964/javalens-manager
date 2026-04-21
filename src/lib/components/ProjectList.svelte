@@ -1,6 +1,7 @@
 <script lang="ts">
   import { afterUpdate } from "svelte";
   import type {
+    DeployTargetFlags,
     DeployMode,
     DeployToAgentsResult,
     ProjectRecord,
@@ -22,15 +23,31 @@
   export let onStopAll: () => void;
   export let onDeleteAll: () => void;
   export let onUpdatePort: (projectId: string, assignedPort: number) => void;
-  export let onDeploy: (mode: DeployMode) => void;
+  export let onDeploy: (mode: DeployMode, targetClients?: string[]) => void;
+  export let deployTargetDefaults: DeployTargetFlags = {
+    cursor: true,
+    claude: true,
+    antigravity: true,
+    intellij: true
+  };
   export let deployBusy = false;
   export let deployError: string | undefined;
   export let lastDeployResult: DeployToAgentsResult | undefined;
+
+  const deployTargetOptions: Array<{ key: keyof DeployTargetFlags; label: string }> = [
+    { key: "cursor", label: "Cursor" },
+    { key: "claude", label: "Claude" },
+    { key: "antigravity", label: "Antigravity" },
+    { key: "intellij", label: "IntelliJ" }
+  ];
 
   let draftPorts: Record<string, string> = {};
   let portInputErrors: Record<string, string> = {};
   let rowRefs: Record<string, HTMLElement> = {};
   let lastAutoScrolledSelection: string | undefined;
+  let showDeployTargetPicker = false;
+  let pendingDeployMode: DeployMode = "deploy";
+  let deployTargetsDraft: DeployTargetFlags = { ...deployTargetDefaults };
 
   function registerRow(node: HTMLElement, projectId: string) {
     rowRefs[projectId] = node;
@@ -48,20 +65,52 @@
   }
 
   function deploySummary(result: DeployToAgentsResult): string {
+    const deployed = result.clients.filter((entry) => entry.status === "success").length;
+    const total = result.clients.length;
     const success = result.clients.filter((entry) => entry.status === "success").length;
     const failed = result.clients.filter((entry) => entry.status === "failed").length;
     const skipped = result.clients.filter((entry) => entry.status === "skipped").length;
-    return `${result.mode}: ${success} success, ${failed} failed, ${skipped} skipped`;
+    return `${result.mode}: deployed ${deployed}/${total} clients (${success} success, ${failed} failed, ${skipped} skipped)`;
   }
 
   function deployFailureDetails(result: DeployToAgentsResult): string[] {
     return result.clients
       .filter((entry) => entry.status === "failed")
-      .map((entry) => {
-        const validation = entry.validationErrors?.[0];
-        const detail = validation || entry.message;
-        return `${entry.client}: ${detail}`;
+      .flatMap((entry) => {
+        const validationErrors = entry.validationErrors?.length ? entry.validationErrors : [entry.message];
+        return validationErrors.map((detail) => `${entry.client}: ${detail}`);
       });
+  }
+
+  function deploySkippedDetails(result: DeployToAgentsResult): string[] {
+    return result.clients
+      .filter((entry) => entry.status === "skipped")
+      .map((entry) => `${entry.client}: ${entry.message}`);
+  }
+
+  function openDeployTargetPicker(mode: DeployMode) {
+    pendingDeployMode = mode;
+    deployTargetsDraft = { ...deployTargetDefaults };
+    showDeployTargetPicker = true;
+  }
+
+  function closeDeployTargetPicker() {
+    showDeployTargetPicker = false;
+  }
+
+  function toggleDeployTarget(client: keyof DeployTargetFlags) {
+    deployTargetsDraft = {
+      ...deployTargetsDraft,
+      [client]: !deployTargetsDraft[client]
+    };
+  }
+
+  function runDeployWithTargets() {
+    const selectedTargets = deployTargetOptions
+      .filter((option) => deployTargetsDraft[option.key])
+      .map((option) => option.key);
+    onDeploy(pendingDeployMode, selectedTargets);
+    closeDeployTargetPicker();
   }
 
   function extractProjectError(status?: RuntimeStatusRecord): string | null {
@@ -133,6 +182,8 @@
   $: totalProjects = projects.length;
   $: runningProjects = projects.filter((project) => runtimeStatuses[project.id]?.phase === "running").length;
   $: stoppedProjects = totalProjects - runningProjects;
+  $: selectedDeployTargetCount = deployTargetOptions.filter((option) => deployTargetsDraft[option.key]).length;
+  $: highlightedDeployMode = showDeployTargetPicker ? pendingDeployMode : "deploy";
 
   afterUpdate(() => {
     if (!selectedProjectId || selectedProjectId === lastAutoScrolledSelection) {
@@ -180,20 +231,72 @@
   <div class="deploy-toolbar-wrap">
     <span class="deploy-toolbar-label">Agent deploy</span>
     <div class="deploy-toolbar segmented-actions">
-    <button disabled={disabled || deployBusy} on:click={() => onDeploy("deploy")} type="button">
+    <button
+      class:active={highlightedDeployMode === "deploy"}
+      disabled={disabled || deployBusy}
+      on:click={() => openDeployTargetPicker("deploy")}
+      type="button"
+    >
       {deployBusy ? "Deploying..." : "Deploy to Agents"}
     </button>
-    <button disabled={disabled || deployBusy} on:click={() => onDeploy("dryRun")} type="button">
+    <button
+      class:active={highlightedDeployMode === "dryRun"}
+      disabled={disabled || deployBusy}
+      on:click={() => openDeployTargetPicker("dryRun")}
+      type="button"
+    >
       Dry run
     </button>
-    <button disabled={disabled || deployBusy} on:click={() => onDeploy("preview")} type="button">
-      Preview
-    </button>
-    <button disabled={disabled || deployBusy} on:click={() => onDeploy("regenerate")} type="button">
+    <button
+      class:active={highlightedDeployMode === "regenerate"}
+      disabled={disabled || deployBusy}
+      on:click={() => openDeployTargetPicker("regenerate")}
+      type="button"
+    >
       Regenerate
+    </button>
+    <button
+      class:active={highlightedDeployMode === "delete"}
+      disabled={disabled || deployBusy}
+      on:click={() => openDeployTargetPicker("delete")}
+      type="button"
+    >
+      Delete
     </button>
     </div>
   </div>
+
+  {#if showDeployTargetPicker}
+    <div class="deploy-target-picker">
+      <p class="hint"><strong>Targets for {pendingDeployMode}</strong></p>
+      <div class="deploy-target-grid">
+        {#each deployTargetOptions as option}
+          <label class="checkbox-row compact">
+            <input
+              checked={deployTargetsDraft[option.key]}
+              disabled={disabled || deployBusy}
+              on:change={() => toggleDeployTarget(option.key)}
+              type="checkbox"
+            />
+            <span>{option.label}</span>
+          </label>
+        {/each}
+      </div>
+      <div class="actions compact">
+        <button disabled={disabled || deployBusy} on:click={closeDeployTargetPicker} type="button">Cancel</button>
+        <button
+          disabled={disabled || deployBusy || selectedDeployTargetCount === 0}
+          on:click={runDeployWithTargets}
+          type="button"
+        >
+          Run {pendingDeployMode}
+        </button>
+      </div>
+      {#if selectedDeployTargetCount === 0}
+        <p class="project-error">Select at least one deploy target.</p>
+      {/if}
+    </div>
+  {/if}
 
   {#if deployError}
     <p class="project-error">{deployError}</p>
@@ -202,6 +305,11 @@
     {#if deployFailureDetails(lastDeployResult).length > 0}
       {#each deployFailureDetails(lastDeployResult) as failure}
         <p class="project-error">{failure}</p>
+      {/each}
+    {/if}
+    {#if deploySkippedDetails(lastDeployResult).length > 0}
+      {#each deploySkippedDetails(lastDeployResult) as skipped}
+        <p class="hint">{skipped}</p>
       {/each}
     {/if}
   {/if}

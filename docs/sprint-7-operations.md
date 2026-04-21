@@ -26,8 +26,21 @@ Deploy modes:
 
 1. Open Dashboard.
 2. Trigger one of the deploy actions.
-3. Review per-client result summary.
-4. For failures, correct path/runtime issues in Settings, then rerun.
+3. In the targets popup, confirm or override clients for this run.
+4. Review per-client result summary (`deployed X/Y`) and skipped reasons.
+5. For failures, correct path/runtime issues in Settings, then rerun.
+
+## Deploy Target Selection
+
+- Settings defines default deploy participation flags per client:
+  - Cursor
+  - Claude
+  - Antigravity
+  - IntelliJ
+- Dashboard deploy popup preselects clients from those flags.
+- Run-scoped changes in the popup do not mutate saved Settings.
+- Unselected or disabled clients are reported as `skipped` with explicit reason.
+- Missing target path remains a client-level `skipped` outcome (`not configured`).
 
 ## Managed Section Behavior
 
@@ -36,14 +49,20 @@ Deploy modes:
 - Merge behavior follows `mcpMergeMode`.
 - Backups are written when `mcpBackupBeforeWrite` is enabled.
 
-## Tray Close Behavior
+## Tray and Quit Behavior
 
-- If `useSystemTray=true` and services are running: close hides to tray.
-- Minimize remains normal OS minimize behavior.
+- Window close:
+  - `useSystemTray=true` and running services -> hide to tray (no shutdown).
+  - otherwise -> prompt for confirmation before app shutdown.
+- Tray `Quit`:
+  - app surfaces the main window and prompts explicitly.
+  - with running services -> confirm stop-and-quit, optional hide-to-tray fallback.
+  - with no running services -> lightweight shutdown confirmation.
 - Tray menu supports `Show`, `Stop all services`, `Quit`.
 
 ## Troubleshooting
 
 - **Path validation failed**: ensure target config parent directory exists.
 - **No deployable services**: verify project runtime resolves and project list is non-empty.
+- **Unexpected skipped clients**: check Settings deploy flags and run-scoped popup selection.
 - **Partial client failures**: inspect per-client `validationErrors` and rerun.

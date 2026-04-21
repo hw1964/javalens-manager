@@ -8,11 +8,12 @@ use config::ConfigStore;
 use manager_service::ManagerService;
 use release_manager::ReleaseManager;
 use runtime_manager::RuntimeManager;
+use serde::Serialize;
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Manager, WindowEvent,
+    Emitter, Manager, WindowEvent,
 };
 
 pub struct AppState {
@@ -25,6 +26,14 @@ const TRAY_ICON_SIZE: u32 = 32;
 enum TrayIconVariant {
     JCircle,
     CoffeeCircle,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QuitPromptEvent {
+    source: String,
+    running_services: usize,
+    tray_enabled: bool,
 }
 
 fn selected_tray_icon_variant() -> TrayIconVariant {
@@ -141,12 +150,15 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState { manager_service })
         .setup(|app| {
-            let tray_show =
-                MenuItem::with_id(app, "tray_show_window", "Show", true, None::<&str>)?;
-            let tray_stop_all =
-                MenuItem::with_id(app, "tray_stop_all_services", "Stop all services", true, None::<&str>)?;
-            let tray_quit =
-                MenuItem::with_id(app, "tray_quit", "Quit", true, None::<&str>)?;
+            let tray_show = MenuItem::with_id(app, "tray_show_window", "Show", true, None::<&str>)?;
+            let tray_stop_all = MenuItem::with_id(
+                app,
+                "tray_stop_all_services",
+                "Stop all services",
+                true,
+                None::<&str>,
+            )?;
+            let tray_quit = MenuItem::with_id(app, "tray_quit", "Quit", true, None::<&str>)?;
             let tray_menu = Menu::with_items(app, &[&tray_show, &tray_stop_all, &tray_quit])?;
 
             let _tray = TrayIconBuilder::new()
@@ -166,11 +178,11 @@ pub fn run() {
                             let _ = state.manager_service.stop_all_runtimes();
                         }
                         "tray_quit" => {
-                            let state = app_handle.state::<AppState>();
-                            if state.manager_service.has_running_services() {
-                                let _ = state.manager_service.stop_all_runtimes();
+                            if let Some(window) = app_handle.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
                             }
-                            app_handle.exit(0);
+                            emit_quit_prompt_event(app_handle, "tray");
                         }
                         _ => {}
                     }
@@ -185,6 +197,9 @@ pub fn run() {
                 if state.manager_service.should_close_to_tray() {
                     api.prevent_close();
                     let _ = window.hide();
+                } else {
+                    api.prevent_close();
+                    emit_quit_prompt_event(window.app_handle(), "window");
                 }
             }
         })
@@ -211,7 +226,19 @@ pub fn run() {
             commands::clean_generated_data,
             commands::probe_services,
             commands::deploy_to_agents,
+            commands::get_quit_prompt_context,
+            commands::perform_quit_action,
         ])
         .run(tauri::generate_context!())
         .expect("error while running javalens-manager");
+}
+
+fn emit_quit_prompt_event(app_handle: &tauri::AppHandle, source: &str) {
+    let state = app_handle.state::<AppState>();
+    let payload = QuitPromptEvent {
+        source: source.to_string(),
+        running_services: state.manager_service.running_services_count(),
+        tray_enabled: state.manager_service.is_system_tray_enabled(),
+    };
+    let _ = app_handle.emit("javalens://quit-requested", payload);
 }

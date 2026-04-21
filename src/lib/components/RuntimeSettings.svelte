@@ -4,6 +4,7 @@
   import type {
     BootstrapStatus,
     CleanupSummary,
+    DeployTargetFlags,
     ManagedRuntimeRecord,
     McpClientPathEntry,
     McpClientPaths,
@@ -48,6 +49,12 @@
   let localJarPath = "";
   let mcpMergeMode: McpMergeMode = "safeMerge";
   let mcpBackupBeforeWrite = true;
+  let deployTargets: DeployTargetFlags = {
+    cursor: true,
+    claude: true,
+    antigravity: true,
+    intellij: true
+  };
   let mcpClientPaths: McpClientPaths = {
     cursor: {},
     claude: {},
@@ -71,6 +78,7 @@
       mcpMergeMode = settings.mcpMergeMode;
       mcpBackupBeforeWrite = settings.mcpBackupBeforeWrite;
       mcpClientPaths = settings.mcpClientPaths;
+      deployTargets = settings.deployTargets;
       localJarPath =
         settings.globalRuntimeSource.kind === "localJar" ? settings.globalRuntimeSource.jarPath : "";
       lastAppliedSettingsSnapshot = settingsSnapshot;
@@ -199,7 +207,15 @@
             },
       mcpClientPaths,
       mcpMergeMode,
-      mcpBackupBeforeWrite
+      mcpBackupBeforeWrite,
+      deployTargets
+    };
+  }
+
+  function setDeployTargetEnabled(client: keyof DeployTargetFlags, enabled: boolean) {
+    deployTargets = {
+      ...deployTargets,
+      [client]: enabled
     };
   }
 
@@ -466,8 +482,22 @@
         {@const entry = mcpClientPaths[key]}
         <div class="stack mcp-client-card compact">
           <div class="mcp-client-heading">
-            <strong>{clientLabel}</strong>
-            <span class={`mcp-source-badge ${mcpPathSource(entry)}`}>{mcpPathSourceLabel(entry)}</span>
+            <div class="mcp-client-title-row">
+              <strong>{clientLabel}</strong>
+              <div class="mcp-client-title-controls">
+                <label class="checkbox-row compact mcp-deploy-checkbox" title="Include in deploy default">
+                  <input
+                    checked={deployTargets[key]}
+                    disabled={disabled}
+                    on:change={(event) =>
+                      setDeployTargetEnabled(key as keyof DeployTargetFlags, (event.currentTarget as HTMLInputElement).checked)}
+                    type="checkbox"
+                  />
+                  <span>Deploy</span>
+                </label>
+                <span class={`mcp-source-badge ${mcpPathSource(entry)}`}>{mcpPathSourceLabel(entry)}</span>
+              </div>
+            </div>
           </div>
           <p class="hint mcp-current-path" title={effectivePath(entry)}>
             <strong>Current:</strong> {effectivePath(entry)}

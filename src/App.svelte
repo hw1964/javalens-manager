@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import { listen } from "@tauri-apps/api/event";
   import ProjectForm from "./lib/components/ProjectForm.svelte";
   import ProjectList from "./lib/components/ProjectList.svelte";
   import RuntimeSettings from "./lib/components/RuntimeSettings.svelte";
   import { createAppStore } from "./lib/stores/app";
   import {
     type AddProjectInput,
+    performQuitAction,
     type UpdateSettingsInput
   } from "./lib/api/tauri";
 
@@ -25,6 +27,7 @@
   let dragStartX = 0;
   let dragStartWidth = 0;
   let lastDashboardWidth = 0;
+  let unlistenQuitRequested: (() => void) | undefined;
 
   $: selectedProject = $appStore.projects?.find((project) => project.id === $appStore.selectedProjectId);
   $: selectedStatus = selectedProject
@@ -58,6 +61,7 @@
 
   onMount(() => {
     appStore.load();
+    void subscribeQuitRequested();
 
     if (typeof window !== "undefined") {
       const mediaQuery = window.matchMedia("(max-width: 960px)");
@@ -84,7 +88,58 @@
 
   onDestroy(() => {
     stopSplitterDrag();
+    unlistenQuitRequested?.();
+    unlistenQuitRequested = undefined;
   });
+
+  interface QuitPromptPayload {
+    source: "tray" | "window";
+    runningServices: number;
+    trayEnabled: boolean;
+  }
+
+  async function subscribeQuitRequested() {
+    unlistenQuitRequested = await listen<QuitPromptPayload>(
+      "javalens://quit-requested",
+      async (event) => {
+        await handleQuitPrompt(event.payload);
+      }
+    );
+  }
+
+  async function handleQuitPrompt(payload: QuitPromptPayload) {
+    const running = payload.runningServices;
+    if (running <= 0) {
+      if (confirm("Do you really want to shut down javalens-manager?")) {
+        await performQuitAction("quit");
+      }
+      return;
+    }
+
+    if (payload.source === "tray") {
+      const stopAndQuit = confirm(
+        `Quit will stop ${running} running MCP service(s). Press OK to stop services and quit.`
+      );
+      if (stopAndQuit) {
+        await performQuitAction("stopAndQuit");
+        return;
+      }
+      if (payload.trayEnabled && confirm("Keep services running and hide window to tray instead?")) {
+        await performQuitAction("hideToTray");
+      }
+      return;
+    }
+
+    if (payload.trayEnabled) {
+      if (confirm("MCP services are still running. Hide to tray and keep them running?")) {
+        await performQuitAction("hideToTray");
+        return;
+      }
+    }
+    if (confirm(`Quit and stop ${running} running MCP service(s)?`)) {
+      await performQuitAction("stopAndQuit");
+    }
+  }
 
   function handleProjectSubmit(event: CustomEvent<AddProjectInput>) {
     appStore.addProjectEntry(event.detail);
@@ -274,8 +329,9 @@
               onStopAll={() => appStore.stopAllProjects()}
               onDelete={(projectId) => appStore.deleteProjectEntry(projectId)}
               onDeleteAll={() => appStore.deleteAllProjectEntries()}
-              onDeploy={(mode) => appStore.deployToAgents(mode)}
+              onDeploy={(mode, targetClients) => appStore.deployToAgents(mode, targetClients)}
               onUpdatePort={(projectId, assignedPort) => appStore.updateProjectPortEntry(projectId, assignedPort)}
+              deployTargetDefaults={$appStore.settings?.deployTargets ?? { cursor: true, claude: true, antigravity: true, intellij: true }}
               deployBusy={$appStore.deployBusy ?? false}
               deployError={$appStore.deployError}
               lastDeployResult={$appStore.lastDeployResult}

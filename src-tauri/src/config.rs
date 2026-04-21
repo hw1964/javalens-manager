@@ -67,6 +67,10 @@ fn default_mcp_backup_before_write() -> bool {
     true
 }
 
+fn default_deploy_targets() -> DeployTargetFlags {
+    DeployTargetFlags::default()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum McpMergeMode {
@@ -104,6 +108,34 @@ pub struct McpClientPaths {
     pub intellij: McpClientPathEntry,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployTargetFlags {
+    #[serde(default = "default_enabled_flag")]
+    pub cursor: bool,
+    #[serde(default = "default_enabled_flag")]
+    pub claude: bool,
+    #[serde(default = "default_enabled_flag")]
+    pub antigravity: bool,
+    #[serde(default = "default_enabled_flag")]
+    pub intellij: bool,
+}
+
+fn default_enabled_flag() -> bool {
+    true
+}
+
+impl Default for DeployTargetFlags {
+    fn default() -> Self {
+        Self {
+            cursor: true,
+            claude: true,
+            antigravity: true,
+            intellij: true,
+        }
+    }
+}
+
 fn default_mcp_client_paths() -> McpClientPaths {
     detect_default_mcp_client_paths()
 }
@@ -131,6 +163,8 @@ pub struct ManagerSettings {
     pub mcp_merge_mode: McpMergeMode,
     #[serde(default = "default_mcp_backup_before_write")]
     pub mcp_backup_before_write: bool,
+    #[serde(default = "default_deploy_targets")]
+    pub deploy_targets: DeployTargetFlags,
     pub last_release_check: Option<String>,
     pub last_seen_latest_version: Option<String>,
 }
@@ -150,6 +184,7 @@ impl ManagerSettings {
             mcp_client_paths: detect_default_mcp_client_paths(),
             mcp_merge_mode: default_mcp_merge_mode(),
             mcp_backup_before_write: default_mcp_backup_before_write(),
+            deploy_targets: default_deploy_targets(),
             last_release_check: None,
             last_seen_latest_version: None,
         }
@@ -212,6 +247,7 @@ pub struct UpdateSettingsInput {
     pub mcp_client_paths: McpClientPaths,
     pub mcp_merge_mode: McpMergeMode,
     pub mcp_backup_before_write: bool,
+    pub deploy_targets: DeployTargetFlags,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -468,6 +504,7 @@ impl ConfigStore {
         settings.mcp_client_paths = sanitize_mcp_client_paths(input.mcp_client_paths);
         settings.mcp_merge_mode = input.mcp_merge_mode;
         settings.mcp_backup_before_write = input.mcp_backup_before_write;
+        settings.deploy_targets = sanitize_deploy_target_flags(input.deploy_targets);
 
         write_json(&self.paths.settings_file, &*settings)?;
         Ok(settings.clone())
@@ -646,6 +683,10 @@ fn merge_mcp_path_entry(
 
 fn sanitize_mcp_client_paths(paths: McpClientPaths) -> McpClientPaths {
     merge_detected_mcp_paths(paths)
+}
+
+fn sanitize_deploy_target_flags(flags: DeployTargetFlags) -> DeployTargetFlags {
+    flags
 }
 
 fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
