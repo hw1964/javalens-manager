@@ -690,6 +690,13 @@ fn sanitize_deploy_target_flags(flags: DeployTargetFlags) -> DeployTargetFlags {
 }
 
 fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
+    if path.exists() {
+        let backup_path = path.with_extension(format!("json.bak.{}", current_timestamp_millis()));
+        if let Err(error) = fs::copy(path, &backup_path) {
+            eprintln!("Warning: failed to create backup of {}: {error}", path.display());
+        }
+    }
+
     let json = serde_json::to_string_pretty(value)
         .map_err(|error| format!("failed to serialize {}: {error}", path.display()))?;
     fs::write(path, format!("{json}\n"))

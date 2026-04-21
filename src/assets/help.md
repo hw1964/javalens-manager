@@ -4,6 +4,18 @@
 
 Use **Dashboard** for day-to-day work, **Settings** for runtime paths and agent config files, and **Help** (this page) for orientation. Nothing here replaces your tools’ own documentation.
 
+## Installation & Updates
+
+To install or update **javalens-manager** on Linux, you can use the provided installation script. This script automatically downloads the latest `.AppImage` from GitHub Releases, verifies its checksum, and sets up a desktop entry so the app appears in your system launcher.
+
+Run the following command in your terminal:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/hw1964/javalens-manager/main/install.sh | bash
+```
+
+For more details or to download `.deb` packages manually, visit the [GitHub Releases page](https://github.com/hw1964/javalens-manager/releases).
+
 ---
 
 ## Dashboard

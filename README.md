@@ -22,6 +22,18 @@ Early-stage project. The first runnable slice exists, and the current upgrade wo
 - [`docs/sprint-6-backlog.md`](docs/sprint-6-backlog.md) - radical simplification and global configuration
 - [`docs/tauri-bootstrap.md`](docs/tauri-bootstrap.md) - Sprint 0 and Sprint 1 bootstrap path for the Tauri app
 
+## Installation
+
+You can install or update `javalens-manager` on Linux using the provided installation script. This script will download the latest `.AppImage` and set up a desktop entry for you.
+
+Run the following command in your terminal:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/hw1964/javalens-manager/main/install.sh | bash
+```
+
+Alternatively, you can download the `.deb` or `.AppImage` files manually from the [GitHub Releases page](https://github.com/hw1964/javalens-manager/releases).
+
 ## What It Is
 
 `javalens-manager` is a desktop application for:

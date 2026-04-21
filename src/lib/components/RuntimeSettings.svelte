@@ -458,7 +458,7 @@
     <section class="panel stack settings-section runtime-section">
       <div class="section-intro">
         <h3>JavaLens Runtime</h3>
-        <p class="muted">Runtime updates and source selection.</p>
+        <p class="muted">Runtime updates and source selection. <a href="https://github.com/hw1964/javalens-manager/releases" target="_blank" rel="noopener noreferrer" style="color: #60a5fa; text-decoration: underline; margin-left: 0.5rem;">Check for javalens-manager updates</a></p>
       </div>
       <div class="runtime-summary">
         <span class="runtime-chip">
