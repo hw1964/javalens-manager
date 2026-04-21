@@ -32,6 +32,8 @@ interface AppState extends Partial<ManagerDashboard> {
   selectedProjectId?: string;
   isBusy: boolean;
   error?: string;
+  settingsSaveStatus?: "idle" | "saving" | "success" | "error";
+  settingsSaveMessage?: string;
   projectErrors?: Record<string, string>;
   lastCleanupSummary?: CleanupSummary;
   serviceProbeBusy?: boolean;
@@ -46,7 +48,8 @@ const initialState: AppState = {
   projects: [],
   runtimeStatuses: {},
   projectErrors: {},
-  isBusy: false
+  isBusy: false,
+  settingsSaveStatus: "idle"
 };
 
 function normalizeError(error: unknown): string {
@@ -123,17 +126,39 @@ export function createAppStore() {
   }
 
   async function updateManagerSettings(input: UpdateSettingsInput) {
-    update((state) => ({ ...state, isBusy: true, error: undefined }));
+    update((state) => ({
+      ...state,
+      isBusy: true,
+      error: undefined,
+      settingsSaveStatus: "saving",
+      settingsSaveMessage: "Saving settings..."
+    }));
 
     try {
       syncDashboard(await updateSettings(input));
+      update((state) => ({
+        ...state,
+        settingsSaveStatus: "success",
+        settingsSaveMessage: "New settings stored successfully."
+      }));
     } catch (error) {
       update((state) => ({
         ...state,
         isBusy: false,
-        error: normalizeError(error)
+        error: normalizeError(error),
+        settingsSaveStatus: "error",
+        settingsSaveMessage: `Failed to store settings: ${normalizeError(error)}`
       }));
     }
+  }
+
+  function markSettingsEdited() {
+    update((state) => ({
+      ...state,
+      error: undefined,
+      settingsSaveStatus: "idle",
+      settingsSaveMessage: undefined
+    }));
   }
 
   async function redetectMcpClientPaths() {
@@ -493,6 +518,7 @@ export function createAppStore() {
     deleteProjectEntry,
     deleteAllProjectEntries,
     updateManagerSettings,
+    markSettingsEdited,
     redetectMcpClientPaths,
     downloadLatestRuntime,
     startProject,

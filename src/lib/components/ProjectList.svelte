@@ -65,12 +65,12 @@
   }
 
   function deploySummary(result: DeployToAgentsResult): string {
-    const deployed = result.clients.filter((entry) => entry.status === "success").length;
+    const succeeded = result.clients.filter((entry) => entry.status === "success").length;
     const total = result.clients.length;
-    const success = result.clients.filter((entry) => entry.status === "success").length;
     const failed = result.clients.filter((entry) => entry.status === "failed").length;
     const skipped = result.clients.filter((entry) => entry.status === "skipped").length;
-    return `${result.mode}: deployed ${deployed}/${total} clients (${success} success, ${failed} failed, ${skipped} skipped)`;
+    const actionLabel = result.mode === "delete" ? "updated" : "deployed";
+    return `${result.mode}: ${actionLabel} ${succeeded}/${total} clients (${succeeded} success, ${failed} failed, ${skipped} skipped)`;
   }
 
   function deployFailureDetails(result: DeployToAgentsResult): string[] {
@@ -111,6 +111,13 @@
       .map((option) => option.key);
     onDeploy(pendingDeployMode, selectedTargets);
     closeDeployTargetPicker();
+  }
+
+  function runActionLabel(mode: DeployMode): string {
+    if (mode === "delete") {
+      return "Delete selected";
+    }
+    return `Run ${mode}`;
   }
 
   function extractProjectError(status?: RuntimeStatusRecord): string | null {
@@ -289,7 +296,7 @@
           on:click={runDeployWithTargets}
           type="button"
         >
-          Run {pendingDeployMode}
+          {runActionLabel(pendingDeployMode)}
         </button>
       </div>
       {#if selectedDeployTargetCount === 0}

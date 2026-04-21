@@ -197,28 +197,7 @@ impl ManagerService {
     }
 
     pub fn load_dashboard(&self) -> Result<ManagerDashboard, String> {
-        let bootstrap = self.config_store.bootstrap_status();
-        let mut settings = self.config_store.get_settings();
-        let (installed_runtime, release_status) =
-            self.release_manager.sync_with_settings(&mut settings)?;
-        let settings = self.config_store.write_settings(settings)?;
-
-        let projects = self.config_store.list_projects();
-        let runtime_statuses =
-            self.collect_runtime_statuses(&projects, &settings, installed_runtime.as_ref());
-        let suggested_port = self.suggest_next_port_for(&settings, None);
-        let services_inventory = self.get_services_inventory_with(installed_runtime.as_ref());
-
-        Ok(ManagerDashboard {
-            bootstrap,
-            settings,
-            release_status,
-            installed_runtime,
-            projects,
-            runtime_statuses,
-            suggested_port,
-            services_inventory,
-        })
+        self.build_dashboard(true)
     }
 
     pub fn suggest_next_port(&self) -> Result<u16, String> {
@@ -326,12 +305,12 @@ impl ManagerService {
 
     pub fn update_settings(&self, input: UpdateSettingsInput) -> Result<ManagerDashboard, String> {
         self.config_store.update_settings(input)?;
-        self.load_dashboard()
+        self.build_dashboard(false)
     }
 
     pub fn redetect_mcp_client_paths(&self) -> Result<ManagerDashboard, String> {
         self.config_store.redetect_mcp_client_paths()?;
-        self.load_dashboard()
+        self.build_dashboard(false)
     }
 
     pub fn deploy_to_agents(
@@ -442,6 +421,38 @@ impl ManagerService {
             .download_latest_runtime(&mut settings)?;
         self.config_store.write_settings(settings)?;
         self.load_dashboard()
+    }
+
+    fn build_dashboard(&self, refresh_release_status: bool) -> Result<ManagerDashboard, String> {
+        let bootstrap = self.config_store.bootstrap_status();
+        let (settings, installed_runtime, release_status) = if refresh_release_status {
+            let mut settings = self.config_store.get_settings();
+            let (installed_runtime, release_status) =
+                self.release_manager.sync_with_settings(&mut settings)?;
+            let settings = self.config_store.write_settings(settings)?;
+            (settings, installed_runtime, release_status)
+        } else {
+            let settings = self.config_store.get_settings();
+            let (installed_runtime, release_status) =
+                self.release_manager.status_from_cached_settings(&settings)?;
+            (settings, installed_runtime, release_status)
+        };
+        let projects = self.config_store.list_projects();
+        let runtime_statuses =
+            self.collect_runtime_statuses(&projects, &settings, installed_runtime.as_ref());
+        let suggested_port = self.suggest_next_port_for(&settings, None);
+        let services_inventory = self.get_services_inventory_with(installed_runtime.as_ref());
+
+        Ok(ManagerDashboard {
+            bootstrap,
+            settings,
+            release_status,
+            installed_runtime,
+            projects,
+            runtime_statuses,
+            suggested_port,
+            services_inventory,
+        })
     }
 
     pub fn get_services_inventory(&self) -> ServicesInventory {

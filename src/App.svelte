@@ -394,27 +394,37 @@
     </section>
   {:else if currentView === 'settings'}
     <section class="stack">
-      <RuntimeSettings
-        bootstrap={$appStore.bootstrap}
-        disabled={$appStore.isBusy}
-        installedRuntime={$appStore.installedRuntime}
-        lastCleanupSummary={$appStore.lastCleanupSummary}
-        lastServiceProbe={$appStore.lastServiceProbe}
-        releaseStatus={$appStore.releaseStatus}
-        serviceProbeBusy={$appStore.serviceProbeBusy ?? false}
-        serviceProbeError={$appStore.serviceProbeError}
-        settings={$appStore.settings}
-        on:cleanGeneratedData={() => appStore.cleanAllGeneratedData()}
-        on:cleanLogs={() => appStore.cleanAllLogs()}
-        on:cleanWorkspaces={() => appStore.cleanAllWorkspaces()}
-        on:clearCleanupSummary={() => appStore.clearCleanupSummary()}
-        on:clearServiceProbeError={() => appStore.clearServiceProbeError()}
-        on:download={() => appStore.downloadLatestRuntime()}
-        on:probeServices={() => appStore.probeServices()}
-        on:redetectMcpPaths={() => appStore.redetectMcpClientPaths()}
-        on:refresh={() => appStore.load()}
-        on:save={handleSettingsSave}
-      />
+      {#if $appStore.settings}
+        <RuntimeSettings
+          bootstrap={$appStore.bootstrap}
+          disabled={$appStore.isBusy}
+          installedRuntime={$appStore.installedRuntime}
+          lastCleanupSummary={$appStore.lastCleanupSummary}
+          lastServiceProbe={$appStore.lastServiceProbe}
+          releaseStatus={$appStore.releaseStatus}
+          serviceProbeBusy={$appStore.serviceProbeBusy ?? false}
+          serviceProbeError={$appStore.serviceProbeError}
+          saveMessage={$appStore.settingsSaveMessage}
+          saveStatus={$appStore.settingsSaveStatus ?? "idle"}
+          settings={$appStore.settings}
+          on:cleanGeneratedData={() => appStore.cleanAllGeneratedData()}
+          on:cleanLogs={() => appStore.cleanAllLogs()}
+          on:cleanWorkspaces={() => appStore.cleanAllWorkspaces()}
+          on:clearCleanupSummary={() => appStore.clearCleanupSummary()}
+          on:clearServiceProbeError={() => appStore.clearServiceProbeError()}
+          on:download={() => appStore.downloadLatestRuntime()}
+          on:edited={() => appStore.markSettingsEdited()}
+          on:probeServices={() => appStore.probeServices()}
+          on:redetectMcpPaths={() => appStore.redetectMcpClientPaths()}
+          on:refresh={() => appStore.load()}
+          on:save={handleSettingsSave}
+        />
+      {:else}
+        <section class="panel stack">
+          <h2>Settings</h2>
+          <p class="muted">Loading settings...</p>
+        </section>
+      {/if}
     </section>
   {/if}
 </main>

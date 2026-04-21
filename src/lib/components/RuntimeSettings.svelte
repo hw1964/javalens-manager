@@ -1,6 +1,6 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
-  import { createEventDispatcher } from "svelte";
+  import { createEventDispatcher, onDestroy, tick } from "svelte";
   import type {
     BootstrapStatus,
     CleanupSummary,
@@ -24,10 +24,13 @@
   export let lastServiceProbe: ServiceProbeResult | undefined;
   export let serviceProbeBusy = false;
   export let serviceProbeError: string | undefined;
+  export let saveStatus: "idle" | "saving" | "success" | "error" = "idle";
+  export let saveMessage: string | undefined;
   export let disabled = false;
 
   const dispatch = createEventDispatcher<{
     save: UpdateSettingsInput;
+    edited: void;
     download: void;
     refresh: void;
     cleanLogs: void;
@@ -38,6 +41,8 @@
     clearServiceProbeError: void;
     redetectMcpPaths: void;
   }>();
+
+  const SUCCESS_FADE_MS = 3000;
 
   let updatePolicy: UpdatePolicy = "ask";
   let autoCheckForUpdates = true;
@@ -61,33 +66,261 @@
     antigravity: {},
     intellij: {}
   };
-  let baselineSavePayload = "";
-  let currentSavePayload = "";
+
+  let hasHydratedSettings = false;
+  let persistedPayload = "";
+  let currentPayload = "";
+  let isDirty = false;
   let lastAppliedSettingsSnapshot = "";
+  let pendingSavePayload: string | undefined;
+  let stagedSettings: ManagerSettings | undefined;
+  let stagedSettingsSnapshot = "";
+  let suppressEditSignal = false;
+  let visibleSaveStatus: "idle" | "saving" | "success" | "error" = "idle";
+  let visibleSaveMessage = "";
+  let footerStatusText = "";
+  let awaitingSaveResult = false;
+  let interactionDisabled = true;
+  let successFadeTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function clearSuccessFadeTimer() {
+    if (successFadeTimer) {
+      clearTimeout(successFadeTimer);
+      successFadeTimer = undefined;
+    }
+  }
+
+  onDestroy(() => {
+    clearSuccessFadeTimer();
+  });
+
+  function settingsToSaveInput(nextSettings: ManagerSettings): UpdateSettingsInput {
+    return {
+      updatePolicy: nextSettings.updatePolicy,
+      autoCheckForUpdates: nextSettings.autoCheckForUpdates,
+      dataRoot: nextSettings.dataRoot,
+      globalRuntimeSource: nextSettings.globalRuntimeSource,
+      portRangeStart: nextSettings.portRangeStart,
+      portRangeEnd: nextSettings.portRangeEnd,
+      useSystemTray: nextSettings.useSystemTray,
+      mcpClientPaths: nextSettings.mcpClientPaths,
+      mcpMergeMode: nextSettings.mcpMergeMode,
+      mcpBackupBeforeWrite: nextSettings.mcpBackupBeforeWrite,
+      deployTargets: nextSettings.deployTargets
+    };
+  }
+
+  function normalizeManualOverridePath(value: string | null | undefined): string | null {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  function normalizeMcpPathEntry(entry: McpClientPathEntry | undefined): McpClientPathEntry {
+    const manualOverridePath = normalizeManualOverridePath(entry?.manualOverridePath);
+    return {
+      autoDetectedPath: null,
+      manualOverridePath,
+      effectivePath: null
+    };
+  }
+
+  function normalizeMcpClientPaths(paths: McpClientPaths): McpClientPaths {
+    return {
+      cursor: normalizeMcpPathEntry(paths.cursor),
+      claude: normalizeMcpPathEntry(paths.claude),
+      antigravity: normalizeMcpPathEntry(paths.antigravity),
+      intellij: normalizeMcpPathEntry(paths.intellij)
+    };
+  }
+
+  function normalizeSaveInput(input: UpdateSettingsInput): UpdateSettingsInput {
+    return {
+      updatePolicy: input.updatePolicy,
+      autoCheckForUpdates: input.autoCheckForUpdates,
+      dataRoot: input.dataRoot.trim(),
+      globalRuntimeSource:
+        input.globalRuntimeSource.kind === "managed"
+          ? { kind: "managed" }
+          : { kind: "localJar", jarPath: (input.globalRuntimeSource as any).jarPath?.trim() ?? "" },
+      portRangeStart: input.portRangeStart,
+      portRangeEnd: input.portRangeEnd,
+      useSystemTray: input.useSystemTray,
+      mcpClientPaths: normalizeMcpClientPaths(input.mcpClientPaths),
+      mcpMergeMode: input.mcpMergeMode,
+      mcpBackupBeforeWrite: input.mcpBackupBeforeWrite,
+      deployTargets: {
+        cursor: input.deployTargets.cursor,
+        claude: input.deployTargets.claude,
+        antigravity: input.deployTargets.antigravity,
+        intellij: input.deployTargets.intellij
+      }
+    };
+  }
+
+  function serializeSaveInput(input: UpdateSettingsInput): string {
+    return JSON.stringify(normalizeSaveInput(input));
+  }
+
+  function buildSaveInput(): UpdateSettingsInput {
+    return {
+      updatePolicy,
+      autoCheckForUpdates,
+      dataRoot,
+      portRangeStart,
+      portRangeEnd,
+      useSystemTray,
+      globalRuntimeSource:
+        runtimeKind === "managed"
+          ? {
+              kind: "managed"
+            }
+          : {
+              kind: "localJar",
+              jarPath: localJarPath
+            },
+      mcpClientPaths,
+      mcpMergeMode,
+      mcpBackupBeforeWrite,
+      deployTargets
+    };
+  }
+
+  function recomputeDirtyState() {
+    if (!hasHydratedSettings) {
+      currentPayload = "";
+      isDirty = false;
+      return;
+    }
+    currentPayload = serializeSaveInput(buildSaveInput());
+    isDirty = currentPayload !== persistedPayload;
+  }
+
+  function clearVisibleSaveFeedback() {
+    clearSuccessFadeTimer();
+    visibleSaveStatus = "idle";
+    visibleSaveMessage = "";
+  }
+
+  function handleUserEdit() {
+    if (!hasHydratedSettings || suppressEditSignal) {
+      return;
+    }
+    awaitingSaveResult = false;
+    pendingSavePayload = undefined;
+    stagedSettings = undefined;
+    stagedSettingsSnapshot = "";
+    clearVisibleSaveFeedback();
+    dispatch("edited");
+    recomputeDirtyState();
+  }
+
+  async function handleBoundEdit() {
+    if (!hasHydratedSettings || suppressEditSignal) {
+      return;
+    }
+    await tick();
+    handleUserEdit();
+  }
+
+  function updateSetting(mutator: () => void) {
+    mutator();
+    handleUserEdit();
+  }
+
+  function applySettingsSnapshot(nextSettings: ManagerSettings, snapshot: string) {
+    suppressEditSignal = true;
+    updatePolicy = nextSettings.updatePolicy;
+    autoCheckForUpdates = nextSettings.autoCheckForUpdates;
+    dataRoot = nextSettings.dataRoot;
+    portRangeStart = nextSettings.portRangeStart;
+    portRangeEnd = nextSettings.portRangeEnd;
+    useSystemTray = nextSettings.useSystemTray;
+    runtimeKind = nextSettings.globalRuntimeSource.kind;
+    mcpMergeMode = nextSettings.mcpMergeMode;
+    mcpBackupBeforeWrite = nextSettings.mcpBackupBeforeWrite;
+    mcpClientPaths = nextSettings.mcpClientPaths;
+    deployTargets = nextSettings.deployTargets;
+    localJarPath =
+      nextSettings.globalRuntimeSource.kind === "localJar" ? nextSettings.globalRuntimeSource.jarPath : "";
+    hasHydratedSettings = true;
+    lastAppliedSettingsSnapshot = snapshot;
+    persistedPayload = serializeSaveInput(buildSaveInput());
+    currentPayload = persistedPayload;
+    isDirty = false;
+    pendingSavePayload = undefined;
+    suppressEditSignal = false;
+  }
 
   $: if (settings) {
     const settingsSnapshot = JSON.stringify(settings);
     if (settingsSnapshot !== lastAppliedSettingsSnapshot) {
-      updatePolicy = settings.updatePolicy;
-      autoCheckForUpdates = settings.autoCheckForUpdates;
-      dataRoot = settings.dataRoot;
-      portRangeStart = settings.portRangeStart;
-      portRangeEnd = settings.portRangeEnd;
-      useSystemTray = settings.useSystemTray;
-      runtimeKind = settings.globalRuntimeSource.kind;
-      mcpMergeMode = settings.mcpMergeMode;
-      mcpBackupBeforeWrite = settings.mcpBackupBeforeWrite;
-      mcpClientPaths = settings.mcpClientPaths;
-      deployTargets = settings.deployTargets;
-      localJarPath =
-        settings.globalRuntimeSource.kind === "localJar" ? settings.globalRuntimeSource.jarPath : "";
-      lastAppliedSettingsSnapshot = settingsSnapshot;
-      baselineSavePayload = JSON.stringify(buildSaveInput());
+      const incomingPayload = serializeSaveInput(settingsToSaveInput(settings));
+      const matchesPendingSave = Boolean(pendingSavePayload && incomingPayload === pendingSavePayload);
+      if (!hasHydratedSettings || matchesPendingSave || !isDirty) {
+        applySettingsSnapshot(settings, settingsSnapshot);
+        stagedSettings = undefined;
+        stagedSettingsSnapshot = "";
+      } else {
+        stagedSettings = settings;
+        stagedSettingsSnapshot = settingsSnapshot;
+      }
     }
   }
 
-  $: currentSavePayload = JSON.stringify(buildSaveInput());
-  $: isDirty = currentSavePayload !== baselineSavePayload;
+  $: if (
+    hasHydratedSettings &&
+    !isDirty &&
+    stagedSettings &&
+    stagedSettingsSnapshot &&
+    stagedSettingsSnapshot !== lastAppliedSettingsSnapshot
+  ) {
+    applySettingsSnapshot(stagedSettings, stagedSettingsSnapshot);
+    stagedSettings = undefined;
+    stagedSettingsSnapshot = "";
+  }
+
+  $: {
+    if (saveStatus === "saving" && hasHydratedSettings) {
+      clearSuccessFadeTimer();
+      awaitingSaveResult = true;
+      visibleSaveStatus = "saving";
+      visibleSaveMessage = saveMessage ?? "Saving settings...";
+    } else if (saveStatus === "error") {
+      clearSuccessFadeTimer();
+      awaitingSaveResult = false;
+      visibleSaveStatus = "error";
+      visibleSaveMessage = saveMessage ?? "Failed to store settings.";
+    } else if (saveStatus === "success" && hasHydratedSettings && awaitingSaveResult) {
+      clearSuccessFadeTimer();
+      awaitingSaveResult = false;
+      if (!isDirty) {
+        visibleSaveStatus = "success";
+        visibleSaveMessage = saveMessage ?? "New settings stored successfully.";
+        successFadeTimer = setTimeout(() => {
+          visibleSaveStatus = "idle";
+          visibleSaveMessage = "";
+        }, SUCCESS_FADE_MS);
+      } else {
+        visibleSaveStatus = "idle";
+        visibleSaveMessage = "";
+      }
+    }
+  }
+
+  $: footerStatusText = (() => {
+    if (visibleSaveStatus === "saving") {
+      return visibleSaveMessage || "Saving settings...";
+    }
+    if (visibleSaveStatus === "error") {
+      return visibleSaveMessage || "Failed to store settings.";
+    }
+    if (visibleSaveStatus === "success" && !isDirty) {
+      return visibleSaveMessage || "New settings stored successfully.";
+    }
+    return "";
+  })();
+
+  $: interactionDisabled = disabled || !hasHydratedSettings;
 
   async function chooseDataRoot() {
     const selected = await open({
@@ -97,7 +330,9 @@
     });
 
     if (typeof selected === "string") {
-      dataRoot = selected;
+      updateSetting(() => {
+        dataRoot = selected;
+      });
     }
   }
 
@@ -115,7 +350,9 @@
     });
 
     if (typeof selected === "string") {
-      localJarPath = selected;
+      updateSetting(() => {
+        localJarPath = selected;
+      });
     }
   }
 
@@ -131,23 +368,36 @@
   }
 
   function setManualMcpPath(client: keyof McpClientPaths, path: string) {
-    mcpClientPaths = {
-      ...mcpClientPaths,
-      [client]: {
-        ...(mcpClientPaths[client] ?? {}),
-        manualOverridePath: path
-      }
-    };
+    updateSetting(() => {
+      mcpClientPaths = {
+        ...mcpClientPaths,
+        [client]: {
+          ...(mcpClientPaths[client] ?? {}),
+          manualOverridePath: path
+        }
+      };
+    });
   }
 
   function clearManualMcpPath(client: keyof McpClientPaths) {
-    mcpClientPaths = {
-      ...mcpClientPaths,
-      [client]: {
-        ...(mcpClientPaths[client] ?? {}),
-        manualOverridePath: null
-      }
-    };
+    updateSetting(() => {
+      mcpClientPaths = {
+        ...mcpClientPaths,
+        [client]: {
+          ...(mcpClientPaths[client] ?? {}),
+          manualOverridePath: null
+        }
+      };
+    });
+  }
+
+  function setDeployTargetEnabled(client: keyof DeployTargetFlags, enabled: boolean) {
+    updateSetting(() => {
+      deployTargets = {
+        ...deployTargets,
+        [client]: enabled
+      };
+    });
   }
 
   function confirmAndDispatch(
@@ -188,41 +438,13 @@
     return Boolean(autoPath && manualPath && autoPath !== manualPath);
   }
 
-  function buildSaveInput(): UpdateSettingsInput {
-    return {
-      updatePolicy,
-      autoCheckForUpdates,
-      dataRoot,
-      portRangeStart,
-      portRangeEnd,
-      useSystemTray,
-      globalRuntimeSource:
-        runtimeKind === "managed"
-          ? {
-              kind: "managed"
-            }
-          : {
-              kind: "localJar",
-              jarPath: localJarPath
-            },
-      mcpClientPaths,
-      mcpMergeMode,
-      mcpBackupBeforeWrite,
-      deployTargets
-    };
-  }
-
-  function setDeployTargetEnabled(client: keyof DeployTargetFlags, enabled: boolean) {
-    deployTargets = {
-      ...deployTargets,
-      [client]: enabled
-    };
-  }
-
   function handleSave() {
+    if (!hasHydratedSettings) {
+      return;
+    }
     const payload = buildSaveInput();
+    pendingSavePayload = serializeSaveInput(payload);
     dispatch("save", payload);
-    baselineSavePayload = JSON.stringify(payload);
   }
 </script>
 
@@ -252,7 +474,7 @@
 
       <label class="field">
         <span>Global JavaLens Source</span>
-        <select bind:value={runtimeKind} disabled={disabled}>
+        <select bind:value={runtimeKind} disabled={interactionDisabled} on:change={handleBoundEdit}>
           <option disabled={!installedRuntime} value="managed">Managed runtime</option>
           <option value="localJar">Local JAR fallback</option>
         </select>
@@ -270,33 +492,34 @@
           <div class="field-row">
             <input
               bind:value={localJarPath}
-              disabled={disabled}
+              disabled={interactionDisabled}
+              on:input={handleBoundEdit}
               placeholder="/path/to/javalens.jar"
               required={runtimeKind === "localJar"}
             />
-            <button disabled={disabled} on:click={chooseLocalJar} type="button">Browse</button>
+            <button disabled={interactionDisabled} on:click={chooseLocalJar} type="button">Browse</button>
           </div>
         </label>
       {/if}
 
       <label class="field">
         <span>Update policy</span>
-        <select bind:value={updatePolicy} disabled={disabled}>
+        <select bind:value={updatePolicy} disabled={interactionDisabled} on:change={handleBoundEdit}>
           <option value="ask">Ask before updating</option>
           <option value="always">Always keep latest</option>
         </select>
       </label>
 
       <label class="checkbox-row">
-        <input bind:checked={autoCheckForUpdates} disabled={disabled} type="checkbox" />
+        <input bind:checked={autoCheckForUpdates} disabled={interactionDisabled} on:change={handleBoundEdit} type="checkbox" />
         <span>Check upstream JavaLens release on dashboard load</span>
       </label>
 
       <div class="actions">
-        <button disabled={disabled} on:click={() => dispatch("download")} type="button">
+        <button disabled={interactionDisabled} on:click={() => dispatch("download")} type="button">
           {releaseStatus?.updateAvailable ? "Download update" : "Download latest"}
         </button>
-        <button disabled={disabled} on:click={() => dispatch("refresh")} type="button">
+        <button disabled={interactionDisabled} on:click={() => dispatch("refresh")} type="button">
           Refresh release info
         </button>
       </div>
@@ -369,15 +592,16 @@
             <div class="field-row">
               <input
                 bind:value={dataRoot}
-                disabled={disabled}
+                disabled={interactionDisabled}
+                on:input={handleBoundEdit}
                 placeholder="/path/to/manager/data/root"
                 required
               />
-              <button disabled={disabled} on:click={chooseDataRoot} type="button">Browse</button>
+              <button disabled={interactionDisabled} on:click={chooseDataRoot} type="button">Browse</button>
             </div>
           </label>
           <label class="checkbox-row compact">
-            <input bind:checked={useSystemTray} disabled={disabled} type="checkbox" />
+            <input bind:checked={useSystemTray} disabled={interactionDisabled} on:change={handleBoundEdit} type="checkbox" />
             <span>Use system tray</span>
           </label>
         </section>
@@ -387,8 +611,8 @@
           <label class="field">
             <span>Permitted project ports</span>
             <div class="field-row port-range-row">
-              <input bind:value={portRangeStart} disabled={disabled} min="1024" step="1" type="number" />
-              <input bind:value={portRangeEnd} disabled={disabled} min="1024" step="1" type="number" />
+              <input bind:value={portRangeStart} disabled={interactionDisabled} min="1024" on:input={handleBoundEdit} step="1" type="number" />
+              <input bind:value={portRangeEnd} disabled={interactionDisabled} min="1024" on:input={handleBoundEdit} step="1" type="number" />
             </div>
             <p class="hint">Manager assigns one port per project and checks conflicts.</p>
           </label>
@@ -417,7 +641,7 @@
 
           <div class="actions compact">
             <button
-              disabled={disabled}
+              disabled={interactionDisabled}
               on:click={() =>
                 confirmAndDispatch(
                   "Delete all manager runtime logs? This keeps project registrations and settings.",
@@ -428,7 +652,7 @@
               Clean logs
             </button>
             <button
-              disabled={disabled}
+              disabled={interactionDisabled}
               on:click={() =>
                 confirmAndDispatch(
                   "Delete all manager workspace/index caches? This keeps project registrations and settings.",
@@ -439,7 +663,7 @@
               Clean workspaces
             </button>
             <button
-              disabled={disabled}
+              disabled={interactionDisabled}
               on:click={() =>
                 confirmAndDispatch(
                   "Start from scratch by deleting generated logs + workspaces? Stop running runtimes first.",
@@ -467,7 +691,7 @@
           <h3>MCP Config Locations</h3>
           <p class="muted">Review detected config paths and set optional manual overrides.</p>
         </div>
-        <button disabled={disabled} on:click={() => dispatch("redetectMcpPaths")} type="button">
+        <button disabled={interactionDisabled} on:click={() => dispatch("redetectMcpPaths")} type="button">
           Redetect defaults
         </button>
       </div>
@@ -488,7 +712,7 @@
                 <label class="checkbox-row compact mcp-deploy-checkbox" title="Include in deploy default">
                   <input
                     checked={deployTargets[key]}
-                    disabled={disabled}
+                    disabled={interactionDisabled}
                     on:change={(event) =>
                       setDeployTargetEnabled(key as keyof DeployTargetFlags, (event.currentTarget as HTMLInputElement).checked)}
                     type="checkbox"
@@ -509,34 +733,45 @@
           {/if}
           <div class="field-row">
             <input
-              disabled={disabled}
+              disabled={interactionDisabled}
               on:input={(event) => setManualMcpPath(key, (event.currentTarget as HTMLInputElement).value)}
               placeholder="Manual override path"
               value={entry?.manualOverridePath ?? ""}
             />
-            <button disabled={disabled} on:click={() => chooseMcpPath(key)} type="button">Browse</button>
-            <button disabled={disabled} on:click={() => clearManualMcpPath(key)} type="button">Clear</button>
+            <button disabled={interactionDisabled} on:click={() => chooseMcpPath(key)} type="button">Browse</button>
+            <button disabled={interactionDisabled} on:click={() => clearManualMcpPath(key)} type="button">Clear</button>
           </div>
         </div>
       {/each}
 
       <label class="field">
         <span>Merge mode</span>
-        <select bind:value={mcpMergeMode} disabled={disabled}>
+        <select bind:value={mcpMergeMode} disabled={interactionDisabled} on:change={handleBoundEdit}>
           <option value="safeMerge">Safe merge</option>
           <option value="replaceManagedSection">Replace managed section</option>
         </select>
       </label>
 
       <label class="checkbox-row">
-        <input bind:checked={mcpBackupBeforeWrite} disabled={disabled} type="checkbox" />
+        <input bind:checked={mcpBackupBeforeWrite} disabled={interactionDisabled} on:change={handleBoundEdit} type="checkbox" />
         <span>Create backup before MCP config write</span>
       </label>
     </section>
   </div>
 
   <div class="settings-save-footer">
-    <button class:primary={isDirty} class="save-settings-button" disabled={disabled} on:click={handleSave} type="button">
+    <div class="settings-save-status-wrap">
+      {#if footerStatusText}
+        <span class={`settings-save-status ${visibleSaveStatus}`}>{footerStatusText}</span>
+      {/if}
+    </div>
+    <button
+      class:primary={isDirty}
+      class="save-settings-button"
+      disabled={interactionDisabled}
+      on:click={handleSave}
+      type="button"
+    >
       Save settings
     </button>
   </div>

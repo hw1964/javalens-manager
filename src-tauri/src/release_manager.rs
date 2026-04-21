@@ -7,6 +7,7 @@ use std::{
     fs,
     io::Cursor,
     path::{Path, PathBuf},
+    time::Duration,
 };
 use tar::Archive;
 use walkdir::WalkDir;
@@ -82,6 +83,8 @@ impl ReleaseManager {
     pub fn new() -> Result<Self, String> {
         let client = Client::builder()
             .user_agent("javalens-manager/0.1.0")
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(10))
             .build()
             .map_err(|error| format!("failed to create release manager HTTP client: {error}"))?;
 
@@ -171,6 +174,15 @@ impl ReleaseManager {
         settings.last_release_check = Some(current_timestamp_string());
         settings.last_seen_latest_version = Some(release.version.clone());
         Ok(runtime)
+    }
+
+    pub fn status_from_cached_settings(
+        &self,
+        settings: &ManagerSettings,
+    ) -> Result<(Option<ManagedRuntimeRecord>, ReleaseStatus), String> {
+        let installed = self.get_installed_runtime(settings)?;
+        let status = self.build_cached_release_status(installed.as_ref(), settings);
+        Ok((installed, status))
     }
 
     pub fn get_installed_runtime(
@@ -473,6 +485,78 @@ impl ReleaseManager {
             update_available: false,
             detail: detail_override
                 .unwrap_or_else(|| "No release information is available yet.".into()),
+        }
+    }
+
+    fn build_cached_release_status(
+        &self,
+        installed: Option<&ManagedRuntimeRecord>,
+        settings: &ManagerSettings,
+    ) -> ReleaseStatus {
+        if !settings.auto_check_for_updates {
+            return ReleaseStatus {
+                kind: if installed.is_none() {
+                    ReleaseStatusKind::Missing
+                } else {
+                    ReleaseStatusKind::CheckingDisabled
+                },
+                latest_version: settings.last_seen_latest_version.clone(),
+                default_version: installed.map(|r| r.version.clone()),
+                checked_at: settings.last_release_check.clone(),
+                update_available: false,
+                detail: "Automatic JavaLens release checks are disabled.".into(),
+            };
+        }
+
+        if let Some(latest_version) = settings.last_seen_latest_version.clone() {
+            let update_available =
+                installed.map_or(true, |runtime| runtime.version != latest_version);
+            let kind = if installed.is_none() {
+                ReleaseStatusKind::Missing
+            } else if update_available {
+                ReleaseStatusKind::UpdateAvailable
+            } else {
+                ReleaseStatusKind::Ready
+            };
+
+            let detail = if installed.is_none() {
+                format!(
+                    "No managed JavaLens runtime is cached yet. Last known upstream release is {}.",
+                    latest_version
+                )
+            } else if update_available {
+                format!(
+                    "Last known upstream release is {}. Use Refresh release info to check again.",
+                    latest_version
+                )
+            } else {
+                format!(
+                    "Managed JavaLens runtime {} matches the last known upstream release.",
+                    latest_version
+                )
+            };
+
+            return ReleaseStatus {
+                kind,
+                latest_version: Some(latest_version),
+                default_version: installed.map(|r| r.version.clone()),
+                checked_at: settings.last_release_check.clone(),
+                update_available,
+                detail,
+            };
+        }
+
+        ReleaseStatus {
+            kind: if installed.is_none() {
+                ReleaseStatusKind::Missing
+            } else {
+                ReleaseStatusKind::Ready
+            },
+            latest_version: None,
+            default_version: installed.map(|r| r.version.clone()),
+            checked_at: settings.last_release_check.clone(),
+            update_available: false,
+            detail: "No cached release information is available yet. Use Refresh release info to check upstream.".into(),
         }
     }
 }
