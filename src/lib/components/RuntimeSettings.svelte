@@ -758,21 +758,21 @@
       </label>
     </section>
   </div>
-
-  <div class="settings-save-footer">
-    <div class="settings-save-status-wrap">
-      {#if footerStatusText}
-        <span class={`settings-save-status ${visibleSaveStatus}`}>{footerStatusText}</span>
-      {/if}
-    </div>
-    <button
-      class:primary={isDirty}
-      class="save-settings-button"
-      disabled={interactionDisabled}
-      on:click={handleSave}
-      type="button"
-    >
-      Save settings
-    </button>
-  </div>
 </section>
+
+<div class="panel settings-save-footer">
+  <div class="settings-save-status-wrap">
+    {#if footerStatusText}
+      <span class={`settings-save-status ${visibleSaveStatus}`}>{footerStatusText}</span>
+    {/if}
+  </div>
+  <button
+    class:primary={isDirty}
+    class="save-settings-button"
+    disabled={interactionDisabled}
+    on:click={handleSave}
+    type="button"
+  >
+    Save settings
+  </button>
+</div>

@@ -4,6 +4,7 @@
   import ProjectForm from "./lib/components/ProjectForm.svelte";
   import ProjectList from "./lib/components/ProjectList.svelte";
   import RuntimeSettings from "./lib/components/RuntimeSettings.svelte";
+  import HelpView from "./lib/components/HelpView.svelte";
   import { createAppStore } from "./lib/stores/app";
   import {
     type AddProjectInput,
@@ -18,7 +19,7 @@
   const MIN_RIGHT_PANEL_WIDTH = 420;
   const SPLITTER_WIDTH = 12;
 
-  let currentView: "dashboard" | "settings" = "dashboard";
+  let currentView: "dashboard" | "settings" | "help" = "dashboard";
   let leftPanelWidth = 320;
   let isDraggingSplitter = false;
   let isCompactLayout = false;
@@ -260,7 +261,7 @@
   <title>javalens-manager</title>
 </svelte:head>
 
-<main class={`app-shell ${currentView === "dashboard" ? "dashboard-shell-mode" : ""}`}>
+<main class="app-shell full-height-shell">
   <header class="hero panel">
     <div class="header-content">
       <div>
@@ -281,6 +282,13 @@
           type="button"
         >
           Settings
+        </button>
+        <button
+          class="tab {currentView === 'help' ? 'active' : ''}"
+          on:click={() => (currentView = 'help')}
+          type="button"
+        >
+          Help
         </button>
       </nav>
     </div>
@@ -393,7 +401,7 @@
       {/if}
     </section>
   {:else if currentView === 'settings'}
-    <section class="stack">
+    <section class="dashboard-main">
       {#if $appStore.settings}
         <RuntimeSettings
           bootstrap={$appStore.bootstrap}
@@ -425,6 +433,10 @@
           <p class="muted">Loading settings...</p>
         </section>
       {/if}
+    </section>
+  {:else if currentView === 'help'}
+    <section class="dashboard-main">
+      <HelpView />
     </section>
   {/if}
 </main>

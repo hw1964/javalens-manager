@@ -1,5 +1,7 @@
 # Sprint 7 Backlog
 
+**Status: Completed**
+
 ## Goal
 
 Deploy project-specific JavaLens MCP services into client MCP configs automatically (Cursor, Claude, Antigravity, IntelliJ), and generate client-specific MCP-first rule blocks that enforce "MCP tools before grep/find/manual refactor" behavior.
@@ -28,10 +30,9 @@ Acceptance criteria:
 
 Acceptance criteria:
 - Support writing generated configs to user-chosen export locations (no hidden destructive overwrite).
-- Support preview before write.
 - Support update modes:
   - replace managed section only
-  - append missing entries
+  - safe merge (append missing entries)
 - Preserve non-manager-managed config sections.
 
 ### 3. Deploy UX (Dashboard)
@@ -42,10 +43,11 @@ Acceptance criteria:
 - Provide preview/dry-run mode before write and post-deploy per-client status summary.
 - Show post-deploy coverage as `deployed X/Y clients` plus per-client state (success/fail/skipped with reason).
 - Define deploy action semantics explicitly:
-  - `Deploy to Agents`: normal action (generate + write configs/rules).
+  - `Deploy`: normal action (generate + write configs/rules).
   - `Dry run`: simulate deploy, validate, and show what would change without writing files.
-  - `Preview`: show generated content/diff before writing.
   - `Regenerate`: force rewrite of manager-owned managed sections, even if unchanged.
+  - `Delete`: remove manager-managed MCP servers and rule blocks from the target clients.
+  - *(Note: `Preview` was deferred to future enhancements to keep the dashboard compact)*
 - Include a compact per-run targets picker in Dashboard:
   - Defaults to Settings deploy flags.
   - Supports one-run overrides without mutating saved Settings.
