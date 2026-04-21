@@ -156,6 +156,43 @@
     border-radius: 0 4px 4px 0;
   }
 
+  :global(.markdown-body table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+  }
+
+  :global(.markdown-body th),
+  :global(.markdown-body td) {
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    padding: 0.45rem 0.65rem;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  :global(.markdown-body th) {
+    background: rgba(15, 23, 42, 0.5);
+    color: #f8fafc;
+    font-weight: 600;
+  }
+
+  :global(.markdown-body hr) {
+    border: none;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    margin: 1.5rem 0;
+  }
+
+  :global(.markdown-body img) {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 1rem auto;
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+  }
+
   /* Footer */
   .help-footer {
     display: flex;
