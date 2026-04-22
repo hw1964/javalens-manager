@@ -706,7 +706,10 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     if path.exists() {
         let backup_path = path.with_extension(format!("json.bak.{}", current_timestamp_millis()));
         if let Err(error) = fs::copy(path, &backup_path) {
-            eprintln!("Warning: failed to create backup of {}: {error}", path.display());
+            eprintln!(
+                "Warning: failed to create backup of {}: {error}",
+                path.display()
+            );
         }
     }
 

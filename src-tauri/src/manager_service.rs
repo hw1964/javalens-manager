@@ -465,8 +465,9 @@ impl ManagerService {
             (settings, installed_runtime, release_status)
         } else {
             let settings = self.config_store.get_settings();
-            let (installed_runtime, release_status) =
-                self.release_manager.status_from_cached_settings(&settings)?;
+            let (installed_runtime, release_status) = self
+                .release_manager
+                .status_from_cached_settings(&settings)?;
             (settings, installed_runtime, release_status)
         };
         let projects = self.config_store.list_projects();
