@@ -32,11 +32,19 @@ cat > "$APP_DIR/$APP_NAME.desktop" <<EOF
 [Desktop Entry]
 Name=javalens-manager
 Exec=$BIN_DIR/$APP_NAME
-Icon=$APP_NAME
+Icon=$ICON_DIR/$APP_NAME.png
 Type=Application
 Categories=Development;
 Terminal=false
 EOF
+
+# Try to update desktop database and icon cache silently if the tools are available
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$APP_DIR" || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" || true
+fi
 
 echo "Installation complete! You can now launch $APP_NAME from your application menu."
 echo "Note: Make sure $BIN_DIR is in your PATH."
