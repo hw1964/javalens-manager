@@ -30,3 +30,4 @@ docs/prompts/phase2-agent-orchestrator.md
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 docs/private-github-guide.md
+*.code-workspace
