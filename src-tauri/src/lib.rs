@@ -103,8 +103,8 @@ fn draw_base_circle(rgba: &mut [u8]) {
     let center = (TRAY_ICON_SIZE as i32) / 2;
     // Draw slightly beyond the nominal radius so the circle nearly fills the tray slot.
     let radius = center + 1;
-    // Monochrome, high-contrast fill for readability in dark system bars.
-    let fill = [240, 244, 250, 255];
+    // Blue circle background (matching VS Code info style)
+    let fill = [0, 122, 204, 255]; // #007acc
     for y in 0..TRAY_ICON_SIZE as i32 {
         for x in 0..TRAY_ICON_SIZE as i32 {
             let dx = x - center;
@@ -119,7 +119,8 @@ fn draw_base_circle(rgba: &mut [u8]) {
 }
 
 fn draw_j_glyph(rgba: &mut [u8]) {
-    let white = [20, 24, 30, 255];
+    let white = [255, 255, 255, 255];
+    
     // Larger "J" so the tray glyph stays readable at small sizes.
     draw_rect(rgba, 9, 7, 22, 10, white);
     draw_line_v(rgba, 18, 8, 22, 3, white);
