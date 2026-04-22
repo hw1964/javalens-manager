@@ -103,8 +103,8 @@ fn draw_base_circle(rgba: &mut [u8]) {
     let center = (TRAY_ICON_SIZE as i32) / 2;
     // Draw slightly beyond the nominal radius so the circle nearly fills the tray slot.
     let radius = center + 1;
-    // Blue circle background (matching app primary color #3b82f6)
-    let fill = [59, 130, 246, 255]; // #3b82f6
+    // Dark blue circle background (#1c3a74)
+    let fill = [28, 58, 116, 255]; // #1c3a74
     for y in 0..TRAY_ICON_SIZE as i32 {
         for x in 0..TRAY_ICON_SIZE as i32 {
             let dx = x - center;
