@@ -25,12 +25,14 @@ echo "Setting up desktop entry..."
 mkdir -p "$APP_DIR"
 mkdir -p "$ICON_DIR"
 
-# Download icon (assuming it's in the repo, or we can just use a generic one or extract from AppImage)
-# We will just write the desktop file without an icon for now if we can't easily get it
+# Download icon from the repository
+curl -sSL -o "$ICON_DIR/$APP_NAME.png" "https://raw.githubusercontent.com/$REPO/main/src-tauri/icons/128x128.png"
+
 cat > "$APP_DIR/$APP_NAME.desktop" <<EOF
 [Desktop Entry]
 Name=javalens-manager
 Exec=$BIN_DIR/$APP_NAME
+Icon=$APP_NAME
 Type=Application
 Categories=Development;
 Terminal=false

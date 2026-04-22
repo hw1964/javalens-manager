@@ -3,6 +3,7 @@
 APP_NAME="javalens-manager"
 BIN_DIR="$HOME/.local/bin"
 APP_DIR="$HOME/.local/share/applications"
+ICON_DIR="$HOME/.local/share/icons/hicolor/128x128/apps"
 
 echo "Uninstalling $APP_NAME..."
 
@@ -14,6 +15,11 @@ fi
 if [ -f "$APP_DIR/$APP_NAME.desktop" ]; then
     rm "$APP_DIR/$APP_NAME.desktop"
     echo "Removed desktop entry from $APP_DIR"
+fi
+
+if [ -f "$ICON_DIR/$APP_NAME.png" ]; then
+    rm "$ICON_DIR/$APP_NAME.png"
+    echo "Removed icon from $ICON_DIR"
 fi
 
 echo "Uninstallation complete. Note: Configuration and data files in ~/.config/javalens-manager and ~/.local/state/javalens-manager were kept."
