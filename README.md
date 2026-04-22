@@ -34,6 +34,13 @@ curl -sSL https://raw.githubusercontent.com/hw1964/javalens-manager/main/install
 
 Alternatively, you can download the `.deb` or `.AppImage` files manually from the [GitHub Releases page](https://github.com/hw1964/javalens-manager/releases).
 
+If you launch the `.AppImage` manually, ensure it has executable permission first:
+
+```bash
+chmod +x javalens-manager_0.9.0_amd64.AppImage
+./javalens-manager_0.9.0_amd64.AppImage
+```
+
 ## What It Is
 
 `javalens-manager` is a desktop application for:
