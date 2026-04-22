@@ -16,6 +16,7 @@ use zip::ZipArchive;
 const LATEST_RELEASE_URL: &str =
     "https://api.github.com/repos/pzalutski-pixel/javalens-mcp/releases/latest";
 
+/// Represents a cached, managed JavaLens runtime installation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagedRuntimeRecord {
@@ -26,6 +27,7 @@ pub struct ManagedRuntimeRecord {
     pub installed_at: String,
 }
 
+/// Represents the current state of the managed runtime release.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ReleaseStatusKind {
@@ -36,6 +38,7 @@ pub enum ReleaseStatusKind {
     CheckingDisabled,
 }
 
+/// Detailed status information about the managed JavaLens release.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseStatus {
@@ -75,11 +78,13 @@ enum ArchiveKind {
     Zip,
 }
 
+/// Manages downloading, caching, and updating the JavaLens runtime.
 pub struct ReleaseManager {
     client: Client,
 }
 
 impl ReleaseManager {
+    /// Creates a new release manager with a configured HTTP client.
     pub fn new() -> Result<Self, String> {
         let client = Client::builder()
             .user_agent("javalens-manager/0.1.0")
@@ -91,6 +96,7 @@ impl ReleaseManager {
         Ok(Self { client })
     }
 
+    /// Checks for updates and installs the latest release if permitted by settings.
     pub fn sync_with_settings(
         &self,
         settings: &mut ManagerSettings,
@@ -165,6 +171,7 @@ impl ReleaseManager {
         }
     }
 
+    /// Forces a download and installation of the latest upstream JavaLens release.
     pub fn download_latest_runtime(
         &self,
         settings: &mut ManagerSettings,
@@ -176,6 +183,7 @@ impl ReleaseManager {
         Ok(runtime)
     }
 
+    /// Computes the release status based on locally cached metadata without making network requests.
     pub fn status_from_cached_settings(
         &self,
         settings: &ManagerSettings,
@@ -185,6 +193,7 @@ impl ReleaseManager {
         Ok((installed, status))
     }
 
+    /// Retrieves the currently installed managed runtime record, if any exists.
     pub fn get_installed_runtime(
         &self,
         settings: &ManagerSettings,
@@ -572,6 +581,7 @@ fn compare_runtime_versions_desc(
     compare_version_strings(&right.version, &left.version)
 }
 
+/// Compares two version strings, preferring semantic version parsing if possible.
 pub fn compare_version_strings(left: &str, right: &str) -> std::cmp::Ordering {
     match (Version::parse(left), Version::parse(right)) {
         (Ok(left), Ok(right)) => left.cmp(&right),

@@ -6,7 +6,7 @@ Desktop manager for running and orchestrating JavaLens MCP servers across multip
 
 ## Status
 
-Early-stage project. The first runnable slice exists, and the current upgrade work focuses on managed JavaLens acquisition, persisted settings, and dropdown-driven runtime selection.
+**Beta (v0.9.0)**: `javalens-manager` is now a fully functional desktop application on Linux. It supports registering multiple Java projects, automatically downloading and managing JavaLens runtimes, and deploying MCP configurations directly to Cursor, Claude Desktop, Antigravity, and IntelliJ. While feature-complete for Linux, broader OS support and QA testing are ongoing before a stable 1.0 release.
 
 ## Docs
 
@@ -112,17 +112,16 @@ If you need semantic Java analysis, navigation, refactoring, or diagnostics, tho
 ## Roadmap
 
 ### Current Focus
-- Create the desktop manager foundation
-- Register projects
-- Launch and stop JavaLens instances
-- Show runtime status and health
-- Support one managed JavaLens instance per project
+- Cross-platform testing (macOS, Windows)
+- Broader QA and edge-case testing
+- Automated updates and binary patching
 
-### Later
-- Multi-project operational improvements
-- richer client setup flows
-- stronger UX around logs, status, and recovery
-- deeper integration patterns for editor and agent workflows
+### Completed
+- **Sprint 8:** Packaging and Distribution (Automated GitHub Releases, Linux `.deb` and `.AppImage` installers, auto-update UX)
+- **Sprint 6:** Radical simplification and global configuration
+- **Sprint 5:** Paths, workspace overrides, and Dashboard vs Settings UX
+- **Sprint 2:** Managed-runtime upgrades and team split
+- **Sprint 1:** First runnable slice (Project registry, start/stop controls, health display)
 
 ## Tech Stack
 

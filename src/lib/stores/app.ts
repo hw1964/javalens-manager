@@ -60,6 +60,7 @@ function normalizeError(error: unknown): string {
   return String(error);
 }
 
+/** Creates and returns the application state store. */
 export function createAppStore() {
   const { subscribe, update } = writable<AppState>(initialState);
   const STATUS_POLL_INTERVAL_MS = 2500;

@@ -1,9 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 
+/** Represents the current phase of a runtime instance. */
 export type RuntimePhase = "stopped" | "starting" | "running" | "failed";
+/** Policy for handling application updates. */
 export type UpdatePolicy = "always" | "ask";
+/** Mode for merging MCP settings into client configurations. */
 export type McpMergeMode = "safeMerge" | "replaceManagedSection";
+/** Mode for deploying MCP configuration to clients. */
 export type DeployMode = "deploy" | "dryRun" | "preview" | "regenerate" | "delete";
+/** Status kind for application release checks. */
 export type ReleaseStatusKind =
   | "ready"
   | "missing"
@@ -11,6 +16,7 @@ export type ReleaseStatusKind =
   | "checkFailed"
   | "checkingDisabled";
 
+/** Paths and configuration used during application bootstrap. */
 export interface BootstrapStatus {
   configDir: string;
   stateDir: string;
@@ -24,6 +30,7 @@ export interface BootstrapStatus {
   healthStrategy: string;
 }
 
+/** Global settings for the manager application. */
 export interface ManagerSettings {
   version: number;
   updatePolicy: UpdatePolicy;
@@ -42,12 +49,14 @@ export interface ManagerSettings {
   lastSeenLatestVersion?: string | null;
 }
 
+/** Represents path configuration for a specific MCP client. */
 export interface McpClientPathEntry {
   autoDetectedPath?: string | null;
   manualOverridePath?: string | null;
   effectivePath?: string | null;
 }
 
+/** Collection of paths for all supported MCP clients. */
 export interface McpClientPaths {
   cursor: McpClientPathEntry;
   claude: McpClientPathEntry;
@@ -55,6 +64,7 @@ export interface McpClientPaths {
   intellij: McpClientPathEntry;
 }
 
+/** Flags indicating which MCP clients to deploy to. */
 export interface DeployTargetFlags {
   cursor: boolean;
   claude: boolean;
@@ -62,6 +72,7 @@ export interface DeployTargetFlags {
   intellij: boolean;
 }
 
+/** Source configuration for the JavaLens runtime. */
 export type RuntimeSource =
   | {
       kind: "managed";
@@ -71,6 +82,7 @@ export type RuntimeSource =
       jarPath: string;
     };
 
+/** Record of a registered project. */
 export interface ProjectRecord {
   id: string;
   name: string;
@@ -78,12 +90,14 @@ export interface ProjectRecord {
   assignedPort: number;
 }
 
+/** Input for adding a new project. */
 export interface AddProjectInput {
   name: string;
   projectPath: string;
   assignedPort?: number;
 }
 
+/** Input for updating manager settings. */
 export interface UpdateSettingsInput {
   updatePolicy: UpdatePolicy;
   autoCheckForUpdates: boolean;
@@ -98,6 +112,7 @@ export interface UpdateSettingsInput {
   deployTargets: DeployTargetFlags;
 }
 
+/** Record of an installed managed runtime. */
 export interface ManagedRuntimeRecord {
   version: string;
   installDir: string;
@@ -106,6 +121,7 @@ export interface ManagedRuntimeRecord {
   installedAt: string;
 }
 
+/** Status of the current release and available updates. */
 export interface ReleaseStatus {
   kind: ReleaseStatusKind;
   latestVersion?: string | null;
@@ -115,6 +131,7 @@ export interface ReleaseStatus {
   detail: string;
 }
 
+/** Status of a specific project's runtime. */
 export interface RuntimeStatusRecord {
   projectId: string;
   phase: RuntimePhase;
@@ -129,6 +146,7 @@ export interface RuntimeStatusRecord {
   detail: string;
 }
 
+/** Comprehensive dashboard state for the manager application. */
 export interface ManagerDashboard {
   bootstrap: BootstrapStatus;
   settings: ManagerSettings;
@@ -140,12 +158,14 @@ export interface ManagerDashboard {
   servicesInventory: ServicesInventory;
 }
 
+/** Inventory of available runtime services. */
 export interface ServicesInventory {
   available: boolean;
   services: string[];
   detail: string;
 }
 
+/** Summary of a cleanup operation. */
 export interface CleanupSummary {
   target: string;
   deletedFiles: number;
@@ -154,6 +174,7 @@ export interface CleanupSummary {
   detail: string;
 }
 
+/** Result of probing available services. */
 export interface ServiceProbeResult {
   ok: boolean;
   services: ProbeServiceEntry[];
@@ -162,13 +183,16 @@ export interface ServiceProbeResult {
   rawProtocolError?: string | null;
 }
 
+/** Entry for a probed service. */
 export interface ProbeServiceEntry {
   name: string;
   description?: string | null;
 }
 
+/** Status of a deployment to a specific client. */
 export type DeployClientStatus = "success" | "skipped" | "failed";
 
+/** Result of a deployment to a specific client. */
 export interface DeployClientResult {
   client: string;
   targetPath: string;
@@ -180,11 +204,13 @@ export interface DeployClientResult {
   previewContent?: string | null;
 }
 
+/** Input for deploying MCP configuration to agents. */
 export interface DeployToAgentsInput {
   mode: DeployMode;
   targetClients?: string[] | null;
 }
 
+/** Result of deploying MCP configuration to agents. */
 export interface DeployToAgentsResult {
   mode: DeployMode;
   ok: boolean;
@@ -193,126 +219,156 @@ export interface DeployToAgentsResult {
   clients: DeployClientResult[];
 }
 
+/** Context for the quit prompt dialog. */
 export interface QuitPromptContext {
   runningServices: number;
   trayEnabled: boolean;
 }
 
+/** Action to take when quitting the application. */
 export type QuitAction = "cancel" | "hideToTray" | "stopAndQuit" | "quit";
 
+/** Input for updating a project's assigned port. */
 export interface UpdateProjectPortInput {
   projectId: string;
   assignedPort: number;
 }
 
+/** Candidate project found during workspace discovery. */
 export interface WorkspaceProjectCandidate {
   name: string;
   projectPath: string;
   kind: string;
 }
 
+/** Input for importing projects from a workspace. */
 export interface WorkspaceImportInput {
   workspaceFile: string;
   selectedPaths: string[];
 }
 
+/** Result of importing projects from a workspace. */
 export interface WorkspaceImportResult {
   added: ProjectRecord[];
   skipped: string[];
 }
 
+/** Retrieves the current dashboard state. */
 export function getDashboard(): Promise<ManagerDashboard> {
   return invoke("get_dashboard");
 }
 
+/** Adds a new project. */
 export function addProject(input: AddProjectInput): Promise<ProjectRecord> {
   return invoke("add_project", { input });
 }
 
+/** Suggests the next available port for a project. */
 export function suggestNextPort(): Promise<number> {
   return invoke("suggest_next_port");
 }
 
+/** Updates the assigned port for a project. */
 export function updateProjectPort(input: UpdateProjectPortInput): Promise<ManagerDashboard> {
   return invoke("update_project_port", { input });
 }
 
+/** Deletes a project by its ID. */
 export function deleteProject(projectId: string): Promise<ManagerDashboard> {
   return invoke("delete_project", { projectId });
 }
 
+/** Starts runtimes for all projects. */
 export function startAllRuntimes(): Promise<ManagerDashboard> {
   return invoke("start_all_runtimes");
 }
 
+/** Stops runtimes for all projects. */
 export function stopAllRuntimes(): Promise<ManagerDashboard> {
   return invoke("stop_all_runtimes");
 }
 
+/** Deletes all projects. */
 export function deleteAllProjects(): Promise<ManagerDashboard> {
   return invoke("delete_all_projects");
 }
 
+/** Discovers project candidates within a workspace file. */
 export function discoverWorkspaceProjects(workspaceFile: string): Promise<WorkspaceProjectCandidate[]> {
   return invoke("discover_workspace_projects", { workspaceFile });
 }
 
+/** Imports selected projects from a workspace. */
 export function importWorkspaceProjects(input: WorkspaceImportInput): Promise<WorkspaceImportResult> {
   return invoke("import_workspace_projects", { input });
 }
 
+/** Updates the manager settings. */
 export function updateSettings(input: UpdateSettingsInput): Promise<ManagerDashboard> {
   return invoke("update_settings", { input });
 }
 
+/** Redetects paths for MCP clients. */
 export function redetectMcpClientPaths(): Promise<ManagerDashboard> {
   return invoke("redetect_mcp_client_paths");
 }
 
+/** Downloads or updates the JavaLens runtime. */
 export function downloadOrUpdateJavalens(): Promise<ManagerDashboard> {
   return invoke("download_or_update_javalens");
 }
 
+/** Starts the runtime for a specific project. */
 export function startRuntime(projectId: string): Promise<RuntimeStatusRecord> {
   return invoke("start_runtime", { projectId });
 }
 
+/** Stops the runtime for a specific project. */
 export function stopRuntime(projectId: string): Promise<RuntimeStatusRecord> {
   return invoke("stop_runtime", { projectId });
 }
 
+/** Retrieves the runtime status for a specific project. */
 export function getRuntimeStatus(projectId: string): Promise<RuntimeStatusRecord> {
   return invoke("get_runtime_status", { projectId });
 }
 
+/** Retrieves the inventory of available services. */
 export function getServicesInventory(): Promise<ServicesInventory> {
   return invoke("get_services_inventory");
 }
 
+/** Cleans up log files. */
 export function cleanLogs(): Promise<CleanupSummary> {
   return invoke("clean_logs");
 }
 
+/** Cleans up workspace data. */
 export function cleanWorkspaces(): Promise<CleanupSummary> {
   return invoke("clean_workspaces");
 }
 
+/** Cleans up generated data. */
 export function cleanGeneratedData(): Promise<CleanupSummary> {
   return invoke("clean_generated_data");
 }
 
+/** Probes available services to check their status. */
 export function probeServices(): Promise<ServiceProbeResult> {
   return invoke("probe_services");
 }
 
+/** Deploys MCP configuration to target agents. */
 export function deployToAgents(input: DeployToAgentsInput): Promise<DeployToAgentsResult> {
   return invoke("deploy_to_agents", { input });
 }
 
+/** Retrieves context for the quit prompt. */
 export function getQuitPromptContext(): Promise<QuitPromptContext> {
   return invoke("get_quit_prompt_context");
 }
 
+/** Performs the specified quit action. */
 export function performQuitAction(action: QuitAction): Promise<void> {
   return invoke("perform_quit_action", { action });
 }

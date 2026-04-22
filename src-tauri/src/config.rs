@@ -11,6 +11,7 @@ const PROJECTS_FILE_NAME: &str = "projects.json";
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const RUNTIME_STATE_FILE_NAME: &str = "runtime-state.json";
 
+/// Initial configuration and state paths required for the application to start.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BootstrapStatus {
@@ -26,6 +27,7 @@ pub struct BootstrapStatus {
     pub health_strategy: String,
 }
 
+/// Policy determining how application updates should be handled.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum UpdatePolicy {
@@ -71,6 +73,7 @@ fn default_deploy_targets() -> DeployTargetFlags {
     DeployTargetFlags::default()
 }
 
+/// Strategy for merging MCP configuration changes.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum McpMergeMode {
@@ -84,6 +87,7 @@ impl Default for McpMergeMode {
     }
 }
 
+/// Configuration for a specific MCP client's configuration file path.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct McpClientPathEntry {
@@ -95,6 +99,7 @@ pub struct McpClientPathEntry {
     pub effective_path: Option<String>,
 }
 
+/// Collection of paths to various MCP client configuration files.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct McpClientPaths {
@@ -108,6 +113,7 @@ pub struct McpClientPaths {
     pub intellij: McpClientPathEntry,
 }
 
+/// Flags indicating which MCP clients should receive deployments.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeployTargetFlags {
@@ -140,6 +146,7 @@ fn default_mcp_client_paths() -> McpClientPaths {
     detect_default_mcp_client_paths()
 }
 
+/// Global settings for the JavaLens manager application.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagerSettings {
@@ -201,6 +208,7 @@ impl ManagerSettings {
     }
 }
 
+/// Source of the JavaLens runtime environment.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum RuntimeSource {
@@ -217,6 +225,7 @@ impl RuntimeSource {
     }
 }
 
+/// Information about a registered Java project.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectRecord {
@@ -226,6 +235,7 @@ pub struct ProjectRecord {
     pub assigned_port: u16,
 }
 
+/// Input data for registering a new project.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AddProjectInput {
@@ -234,6 +244,7 @@ pub struct AddProjectInput {
     pub assigned_port: Option<u16>,
 }
 
+/// Input data for updating the manager settings.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSettingsInput {
@@ -273,6 +284,7 @@ struct LegacyProjectsFile {
     projects: Vec<LegacyProjectRecord>,
 }
 
+/// Core filesystem paths used by the application.
 #[derive(Debug, Clone)]
 pub struct AppPaths {
     pub config_dir: PathBuf,
@@ -342,6 +354,7 @@ impl AppPaths {
     }
 }
 
+/// Thread-safe storage for application configuration and state.
 pub struct ConfigStore {
     paths: AppPaths,
     projects: Mutex<ProjectsFile>,
@@ -710,10 +723,12 @@ fn current_timestamp_millis() -> u128 {
         .as_millis()
 }
 
+/// Returns the current UNIX timestamp in milliseconds as a string.
 pub fn current_timestamp_string() -> String {
     current_timestamp_millis().to_string()
 }
 
+/// Converts a path to a string, using lossy conversion if necessary.
 pub fn display_path(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }

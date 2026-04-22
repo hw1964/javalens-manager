@@ -25,6 +25,7 @@ use std::{
 };
 use walkdir::{DirEntry, WalkDir};
 
+/// Represents the overall state of the manager, including settings, projects, and runtime statuses.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagerDashboard {
@@ -38,6 +39,7 @@ pub struct ManagerDashboard {
     pub services_inventory: ServicesInventory,
 }
 
+/// Represents a discovered project candidate in a workspace.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceProjectCandidate {
@@ -46,6 +48,7 @@ pub struct WorkspaceProjectCandidate {
     pub kind: String,
 }
 
+/// Input for updating a project's assigned port.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateProjectPortInput {
@@ -53,6 +56,7 @@ pub struct UpdateProjectPortInput {
     pub assigned_port: u16,
 }
 
+/// Input for importing projects from an IDE workspace.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceImportInput {
@@ -60,6 +64,7 @@ pub struct WorkspaceImportInput {
     pub selected_paths: Vec<String>,
 }
 
+/// Result of importing projects from a workspace.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceImportResult {
@@ -67,6 +72,7 @@ pub struct WorkspaceImportResult {
     pub skipped: Vec<String>,
 }
 
+/// Inventory of available MCP services provided by the installed runtime.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServicesInventory {
@@ -75,6 +81,7 @@ pub struct ServicesInventory {
     pub detail: String,
 }
 
+/// Summary of a cleanup operation.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CleanupSummary {
@@ -85,6 +92,7 @@ pub struct CleanupSummary {
     pub detail: String,
 }
 
+/// Result of probing the installed runtime for available services.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceProbeResult {
@@ -95,6 +103,7 @@ pub struct ServiceProbeResult {
     pub raw_protocol_error: Option<String>,
 }
 
+/// Represents an individual service discovered during a probe.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProbeServiceEntry {
@@ -102,6 +111,7 @@ pub struct ProbeServiceEntry {
     pub description: Option<String>,
 }
 
+/// Specifies the deployment mode for MCP configurations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DeployMode {
@@ -112,6 +122,7 @@ pub enum DeployMode {
     Delete,
 }
 
+/// Input for deploying MCP configurations to AI agents.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeployToAgentsInput {
@@ -120,6 +131,7 @@ pub struct DeployToAgentsInput {
     pub target_clients: Option<Vec<String>>,
 }
 
+/// Status of deploying MCP configuration to a specific client.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DeployClientStatus {
@@ -128,6 +140,7 @@ pub enum DeployClientStatus {
     Failed,
 }
 
+/// Result of deploying MCP configuration to a specific client.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeployClientResult {
@@ -141,6 +154,7 @@ pub struct DeployClientResult {
     pub preview_content: Option<String>,
 }
 
+/// Overall result of deploying MCP configurations to multiple agents.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeployToAgentsResult {
@@ -177,6 +191,7 @@ struct DeployClientTarget {
     enabled_by_settings: bool,
 }
 
+/// Core service coordinating configuration, releases, and runtimes.
 pub struct ManagerService {
     config_store: ConfigStore,
     release_manager: ReleaseManager,
@@ -184,6 +199,7 @@ pub struct ManagerService {
 }
 
 impl ManagerService {
+    /// Creates a new `ManagerService` instance.
     pub fn new(
         config_store: ConfigStore,
         release_manager: ReleaseManager,
@@ -196,16 +212,19 @@ impl ManagerService {
         }
     }
 
+    /// Loads the current manager dashboard state.
     pub fn load_dashboard(&self) -> Result<ManagerDashboard, String> {
         self.build_dashboard(true)
     }
 
+    /// Suggests the next available port for a project.
     pub fn suggest_next_port(&self) -> Result<u16, String> {
         let settings = self.config_store.get_settings();
         self.suggest_next_port_for(&settings, None)
             .ok_or("No free port available in configured range".into())
     }
 
+    /// Adds a new project to the manager.
     pub fn add_project(&self, input: AddProjectInput) -> Result<ProjectRecord, String> {
         let settings = self.config_store.get_settings();
         let assigned_port = self.allocate_port(&settings, None, input.assigned_port)?;
@@ -216,6 +235,7 @@ impl ManagerService {
         })
     }
 
+    /// Updates the assigned port for an existing project.
     pub fn update_project_port(
         &self,
         input: UpdateProjectPortInput,
@@ -231,12 +251,14 @@ impl ManagerService {
         self.load_dashboard()
     }
 
+    /// Deletes a project by its ID.
     pub fn delete_project(&self, project_id: &str) -> Result<ManagerDashboard, String> {
         self.runtime_manager.remove_project_runtime(project_id)?;
         self.config_store.delete_project(project_id)?;
         self.load_dashboard()
     }
 
+    /// Starts runtimes for all configured projects.
     pub fn start_all_runtimes(&self) -> Result<ManagerDashboard, String> {
         let projects = self.config_store.list_projects();
         let mut errors = Vec::new();
@@ -262,6 +284,7 @@ impl ManagerService {
         self.load_dashboard()
     }
 
+    /// Stops all currently running runtimes.
     pub fn stop_all_runtimes(&self) -> Result<ManagerDashboard, String> {
         let projects = self.config_store.list_projects();
         let mut errors = Vec::new();
@@ -287,6 +310,7 @@ impl ManagerService {
         self.load_dashboard()
     }
 
+    /// Deletes all configured projects.
     pub fn delete_all_projects(&self) -> Result<ManagerDashboard, String> {
         let project_ids: Vec<String> = self
             .config_store
@@ -303,16 +327,19 @@ impl ManagerService {
         self.load_dashboard()
     }
 
+    /// Updates manager settings.
     pub fn update_settings(&self, input: UpdateSettingsInput) -> Result<ManagerDashboard, String> {
         self.config_store.update_settings(input)?;
         self.build_dashboard(false)
     }
 
+    /// Redetects MCP client paths based on the current system.
     pub fn redetect_mcp_client_paths(&self) -> Result<ManagerDashboard, String> {
         self.config_store.redetect_mcp_client_paths()?;
         self.build_dashboard(false)
     }
 
+    /// Deploys MCP configurations to configured AI agents.
     pub fn deploy_to_agents(
         &self,
         input: DeployToAgentsInput,
@@ -385,10 +412,12 @@ impl ManagerService {
         })
     }
 
+    /// Checks if any runtimes are currently running.
     pub fn has_running_services(&self) -> bool {
         self.running_services_count() > 0
     }
 
+    /// Returns the number of currently running services.
     pub fn running_services_count(&self) -> usize {
         let projects = self.config_store.list_projects();
         let mut running = 0usize;
@@ -406,15 +435,18 @@ impl ManagerService {
         running
     }
 
+    /// Determines if the application should minimize to the system tray on close.
     pub fn should_close_to_tray(&self) -> bool {
         let settings = self.config_store.get_settings();
         settings.use_system_tray && self.has_running_services()
     }
 
+    /// Checks if the system tray feature is enabled in settings.
     pub fn is_system_tray_enabled(&self) -> bool {
         self.config_store.get_settings().use_system_tray
     }
 
+    /// Downloads or updates the JavaLens runtime.
     pub fn download_or_update_javalens(&self) -> Result<ManagerDashboard, String> {
         let mut settings = self.config_store.get_settings();
         self.release_manager
@@ -455,6 +487,7 @@ impl ManagerService {
         })
     }
 
+    /// Retrieves the inventory of available MCP services.
     pub fn get_services_inventory(&self) -> ServicesInventory {
         let settings = self.config_store.get_settings();
         let installed = self
@@ -465,6 +498,7 @@ impl ManagerService {
         self.get_services_inventory_with(installed.as_ref())
     }
 
+    /// Cleans up log files.
     pub fn clean_logs(&self) -> Result<CleanupSummary, String> {
         self.ensure_no_running_runtimes()?;
         let log_dir = self.config_store.paths().log_dir;
@@ -473,6 +507,7 @@ impl ManagerService {
         Ok(summary)
     }
 
+    /// Cleans up workspace data.
     pub fn clean_workspaces(&self) -> Result<CleanupSummary, String> {
         self.ensure_no_running_runtimes()?;
         let settings = self.config_store.get_settings();
@@ -482,6 +517,7 @@ impl ManagerService {
         Ok(summary)
     }
 
+    /// Cleans up generated data including logs and workspaces.
     pub fn clean_generated_data(&self) -> Result<CleanupSummary, String> {
         self.ensure_no_running_runtimes()?;
         let log_dir = self.config_store.paths().log_dir;
@@ -510,6 +546,7 @@ impl ManagerService {
         })
     }
 
+    /// Probes the installed runtime for available services.
     pub fn probe_services(&self) -> Result<ServiceProbeResult, String> {
         let started_at = Instant::now();
         let settings = self.config_store.get_settings();
@@ -530,6 +567,7 @@ impl ManagerService {
         Ok(result)
     }
 
+    /// Discovers candidate projects within a workspace file.
     pub fn discover_workspace_projects(
         &self,
         workspace_file: &str,
@@ -594,6 +632,7 @@ impl ManagerService {
         Ok(filtered)
     }
 
+    /// Imports selected projects from a workspace.
     pub fn import_workspace_projects(
         &self,
         input: WorkspaceImportInput,
@@ -621,6 +660,7 @@ impl ManagerService {
         Ok(WorkspaceImportResult { added, skipped })
     }
 
+    /// Starts the runtime for a specific project.
     pub fn start_runtime(&self, project_id: &str) -> Result<RuntimeStatusRecord, String> {
         let project = self
             .config_store
@@ -631,6 +671,7 @@ impl ManagerService {
         self.runtime_manager.start_runtime(&launch_request)
     }
 
+    /// Stops the runtime for a specific project.
     pub fn stop_runtime(&self, project_id: &str) -> Result<RuntimeStatusRecord, String> {
         let project = self
             .config_store
@@ -640,6 +681,7 @@ impl ManagerService {
         self.runtime_manager.stop_runtime(&reference)
     }
 
+    /// Retrieves the current runtime status for a specific project.
     pub fn get_runtime_status(&self, project_id: &str) -> Result<RuntimeStatusRecord, String> {
         let project = self
             .config_store
