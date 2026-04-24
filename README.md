@@ -6,7 +6,7 @@ Desktop manager for running and orchestrating JavaLens MCP servers across multip
 
 ## Status
 
-**Beta (v0.9.3)**: `javalens-manager` is now a fully functional desktop application on Linux. It supports registering multiple Java projects, automatically downloading and managing JavaLens runtimes, and deploying MCP configurations directly to Cursor, Claude Desktop, Antigravity, and IntelliJ. While feature-complete for Linux, broader OS support and QA testing are ongoing before a stable 1.0 release.
+**Beta (v0.9.2)**: `javalens-manager` is now a fully functional desktop application on Linux. It supports registering multiple Java projects, automatically downloading and managing JavaLens runtimes, and deploying MCP configurations directly to Cursor, Claude Desktop, Antigravity, and IntelliJ. While feature-complete for Linux, broader OS support and QA testing are ongoing before a stable 1.0 release.
 
 ## Docs
 
@@ -37,8 +37,8 @@ Alternatively, you can download the `.deb` or `.AppImage` files manually from th
 If you launch the `.AppImage` manually, ensure it has executable permission first:
 
 ```bash
-chmod +x javalens-manager_0.9.3_amd64.AppImage
-./javalens-manager_0.9.3_amd64.AppImage
+chmod +x javalens-manager_0.9.2_amd64.AppImage
+./javalens-manager_0.9.2_amd64.AppImage
 ```
 
 ## What It Is
