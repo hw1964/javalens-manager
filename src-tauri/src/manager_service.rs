@@ -853,7 +853,7 @@ impl ManagerService {
                 let reference = self
                     .resolve_runtime_reference_with(project, settings, installed_runtime.as_ref())
                     .ok()?;
-                let server_id = format!("javalens-{}", project.id);
+                let server_id = format!("jl-{}", project.assigned_port);
                 let mut env = HashMap::new();
                 env.insert("JAVALENS_PROJECT_ID".into(), project.id.clone());
                 env.insert(
@@ -1954,6 +1954,11 @@ fn build_rule_block(client: &str, servers: &[ManagedDeployServer]) -> String {
     lines.join("\n")
 }
 
+/// Keys for MCP servers written by javalens-manager: short `jl-<port>` and legacy `javalens-<projectId>`.
+fn is_javalens_managed_mcp_key(key: &str) -> bool {
+    key.starts_with("jl-") || key.starts_with("javalens-")
+}
+
 fn write_managed_json_block(
     path: &str,
     _client: &str,
@@ -1994,7 +1999,7 @@ fn write_managed_json_block(
         let should_prune_managed =
             force_rewrite || matches!(merge_mode, McpMergeMode::ReplaceManagedSection);
         if should_prune_managed {
-            existing_servers.retain(|key, _| !key.starts_with("javalens-"));
+            existing_servers.retain(|key, _| !is_javalens_managed_mcp_key(key));
         }
 
         for server in servers {
@@ -2007,8 +2012,9 @@ fn write_managed_json_block(
         }
 
         if force_rewrite {
-            existing_servers
-                .retain(|key, _| !key.starts_with("javalens-") || incoming_ids.contains(key));
+            existing_servers.retain(|key, _| {
+                !is_javalens_managed_mcp_key(key) || incoming_ids.contains(key)
+            });
         }
 
         object.insert(
@@ -2071,7 +2077,7 @@ fn remove_managed_json_block(path: &str, backup_before_write: bool) -> Result<bo
             .cloned()
             .unwrap_or_default();
         let previous_len = existing_servers.len();
-        existing_servers.retain(|key, _| !key.starts_with("javalens-"));
+        existing_servers.retain(|key, _| !is_javalens_managed_mcp_key(key));
         changed |= existing_servers.len() != previous_len;
         object.insert(
             "mcpServers".into(),

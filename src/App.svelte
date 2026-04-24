@@ -13,7 +13,7 @@
   } from "./lib/api/tauri";
 
   const appStore = createAppStore();
-  const managerBuildVersion = "v0.9.1";
+  const managerBuildVersion = "v0.9.2";
   const MIN_LEFT_PANEL_WIDTH = 260;
   const MAX_LEFT_PANEL_WIDTH = 560;
   const MIN_RIGHT_PANEL_WIDTH = 420;

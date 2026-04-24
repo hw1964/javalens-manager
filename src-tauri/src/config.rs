@@ -639,6 +639,7 @@ fn detect_default_mcp_client_paths() -> McpClientPaths {
     .collect();
 
     let antigravity_candidates: Vec<PathBuf> = [
+        [".config", "Antigravity", "User", "mcp.json"].as_slice(),
         [".antigravity", "mcp.json"].as_slice(),
         [".config", "antigravity", "mcp.json"].as_slice(),
     ]
