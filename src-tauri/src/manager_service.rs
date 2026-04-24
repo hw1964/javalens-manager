@@ -10,7 +10,9 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::hash_map::DefaultHasher,
     collections::{HashMap, HashSet},
+    hash::{Hash, Hasher},
     fs,
     io::{BufRead, BufReader, Write},
     net::TcpListener,
@@ -1954,22 +1956,58 @@ fn build_rule_block(client: &str, servers: &[ManagedDeployServer]) -> String {
     lines.join("\n")
 }
 
-/// `jl-` with port and a short project label; legacy `javalens-` (long id).
-fn mcp_server_id_for_project(project: &ProjectRecord) -> String {
-    const MAX_ID_LEN: usize = 48;
-    let slug = mcp_label_slug(&project.name, &project.project_path);
-    let base = format!("jl-{}-{}", project.assigned_port, slug);
-    if base.len() <= MAX_ID_LEN {
-        return base;
-    }
-    let prefix = format!("jl-{}-", project.assigned_port);
-    let budget = MAX_ID_LEN.saturating_sub(prefix.len());
-    let cut = if slug.len() > budget { &slug[..budget] } else { &slug };
-    format!("{prefix}{cut}")
+/// Cursor enforces `len(server_id) + 1 + len(tool_name) <= 59` (reports as "exceeds 60 characters").
+/// Antigravity is limited by a separate ~100 *services* / tool-budget; no shared constant here.
+const CURSOR_MCP_COMBINED_MAX: usize = 59;
+/// Upper bound on a single javalens-mcp tool name length (e.g. `get_call_hierarchy_outgoing` ~ 28; keep buffer for future tools).
+const JAVALENS_TOOL_NAME_BUDGET: usize = 32;
+
+fn max_mcp_server_id_len_for_cursor() -> usize {
+    CURSOR_MCP_COMBINED_MAX
+        .saturating_sub(1) // ":"
+        .saturating_sub(JAVALENS_TOOL_NAME_BUDGET)
 }
 
-fn mcp_label_slug(name: &str, project_path: &str) -> String {
-    const SLUG_MAX: usize = 28;
+/// `jl-` with port and a short project label; keep total id within Cursor's server+":"+tool cap.
+/// Legacy: `javalens-` (long id).
+fn mcp_server_id_for_project(project: &ProjectRecord) -> String {
+    let max_id = max_mcp_server_id_len_for_cursor();
+    let prefix = format!("jl-{}-", project.assigned_port);
+    if prefix.len() >= max_id {
+        return format!("jl-{}", project.assigned_port);
+    }
+    let max_slug = max_id.saturating_sub(prefix.len());
+    if max_slug == 0 {
+        return prefix.trim_end_matches('-').to_string();
+    }
+    let mut slug = mcp_label_slug(&project.name, &project.project_path, max_slug);
+    if slug.is_empty() {
+        let h = mcp_id_hash_suffix(&project.id, max_slug);
+        return format!("{prefix}{h}");
+    }
+    let mut id = format!("{prefix}{slug}");
+    while id.len() > max_id {
+        id.pop();
+    }
+    while id.ends_with('-') {
+        id.pop();
+    }
+    if id.len() < prefix.len() {
+        return format!("{prefix}{}", mcp_id_hash_suffix(&project.id, max_slug));
+    }
+    id
+}
+
+fn mcp_id_hash_suffix(id: &str, max_len: usize) -> String {
+    let take = max_len.clamp(4, 12);
+    let mut h = DefaultHasher::new();
+    id.hash(&mut h);
+    let v = h.finish();
+    let hex = format!("{:016x}", v);
+    hex.chars().take(take).collect()
+}
+
+fn mcp_label_slug(name: &str, project_path: &str, max_chars: usize) -> String {
     let trimmed = name.trim();
     let raw: &str = if trimmed.is_empty() {
         std::path::Path::new(project_path)
@@ -1994,10 +2032,10 @@ fn mcp_label_slug(name: &str, project_path: &str) -> String {
         out.pop();
     }
     if out.is_empty() {
-        out.push_str("javalens");
+        return String::new();
     }
-    if out.len() > SLUG_MAX {
-        out.truncate(SLUG_MAX);
+    if out.chars().count() > max_chars {
+        out = out.chars().take(max_chars).collect();
         while out.ends_with('-') {
             out.pop();
         }

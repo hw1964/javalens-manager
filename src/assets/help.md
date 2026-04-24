@@ -54,6 +54,8 @@ The **Agent deploy** strip contains **Deploy to Agents**, **Dry run**, **Regener
 
 Clicking any of these opens a **target picker**: check **Cursor**, **Claude**, **Antigravity**, and/or **IntelliJ** for that run only. Default checkboxes for new runs come from each client’s **Deploy** toggle under **Settings → MCP Config Locations**.
 
+**Cursor (length limit):** Cursor rejects tools when `serverName + ":" + toolName` is longer than about **59–60** characters. The manager **shortens the generated `jl-` server id** (port + a truncated label) so the longest JavaLens tool names still fit. **Antigravity** instead limits how many MCP **services** you can list (on the order of 100 in total in some builds)—that is separate from this character limit.
+
 ### Selected Project Status
 
 When you select a row in **Managed Projects**, the bottom panel shows **Name**, **Project path**, **Assigned port**, process id (**PID**) if running, and **Phase / Health** text from the runtime. Use **Refresh** on that panel if you want to re-query status without switching views.
