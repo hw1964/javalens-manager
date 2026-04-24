@@ -1,12 +1,18 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
-
-  export let version = "0.1.0";
-  export let build = "20260420.01";
+  import { createEventDispatcher, onMount } from "svelte";
+  import { formatManagerVersionForUi, getManagerAppVersion } from "../appVersion";
 
   const dispatch = createEventDispatcher<{
     close: void;
   }>();
+
+  let appVersion = "";
+
+  onMount(() => {
+    void getManagerAppVersion().then((v) => {
+      appVersion = v;
+    });
+  });
 
   function handleClose() {
     dispatch("close");
@@ -32,7 +38,13 @@
     <div class="modal-body stack">
       <div class="about-hero">
         <div class="app-title">javalens-manager</div>
-        <div class="app-version muted">Version {version} (Build {build})</div>
+        <div class="app-version muted">
+          {#if appVersion}
+            Version {formatManagerVersionForUi(appVersion)}
+          {:else}
+            Loading version…
+          {/if}
+        </div>
       </div>
 
       <div class="about-section">
@@ -54,8 +66,8 @@
           </li>
           <li>
             <strong>Open Source Dependencies</strong><br />
-            Built with <a href="https://tauri.app" target="_blank" rel="noopener noreferrer">Tauri</a>, 
-            <a href="https://svelte.dev" target="_blank" rel="noopener noreferrer">Svelte</a>, 
+            Built with <a href="https://tauri.app" target="_blank" rel="noopener noreferrer">Tauri</a>,
+            <a href="https://svelte.dev" target="_blank" rel="noopener noreferrer">Svelte</a>,
             and <a href="https://rust-lang.org" target="_blank" rel="noopener noreferrer">Rust</a>.
           </li>
         </ul>

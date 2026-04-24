@@ -111,6 +111,8 @@ For each supported client (**Cursor**, **Claude**, **Antigravity**, **IntelliJ**
 
 **Redetect defaults** re-runs auto-detection for standard install locations.
 
+**Antigravity (Google / Gemini):** the manager looks for a config in several common locations, including `~/.gemini/antigravity/mcp_config.json` (if that file is already present, it is often chosen first). You can set **Manual override path** to match where Antigravity actually reads from on your system. **Note:** Antigravity and related Gemini clients enforce a **low ceiling on how many MCP tools** can be registered at once (on the order of 100 *tools* across all servers, not a javalens-manager limit). If tools disappear, reduce the number of connected MCP servers or see upstream release notes; this is a **product** constraint, not tied to a JavaLens subscription.
+
 **Merge mode** controls how written client configs combine with existing content:
 
 - **Safe merge** — Inserts or updates only the manager-owned blocks, preserving unrelated entries where possible.

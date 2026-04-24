@@ -11,9 +11,10 @@
     performQuitAction,
     type UpdateSettingsInput
   } from "./lib/api/tauri";
+  import { formatManagerVersionForUi, getManagerAppVersion } from "./lib/appVersion";
 
   const appStore = createAppStore();
-  const managerBuildVersion = "v0.9.2";
+  let managerAppVersion = "";
   const MIN_LEFT_PANEL_WIDTH = 260;
   const MAX_LEFT_PANEL_WIDTH = 560;
   const MIN_RIGHT_PANEL_WIDTH = 420;
@@ -36,7 +37,11 @@
     : undefined;
   $: runtimeSource = $appStore.settings?.globalRuntimeSource;
   $: runtimeSubtitle = (() => {
-    const prefix = `javalens-manager ${managerBuildVersion} | `;
+    const ver =
+      managerAppVersion.length > 0
+        ? formatManagerVersionForUi(managerAppVersion)
+        : "…";
+    const prefix = `javalens-manager ${ver} | `;
     if (runtimeSource?.kind === "localJar") {
       const jarPath = runtimeSource.jarPath?.trim() ?? "";
       if (!jarPath) {
@@ -61,6 +66,9 @@
       : runtimeSubtitle;
 
   onMount(() => {
+    void getManagerAppVersion().then((v) => {
+      managerAppVersion = v;
+    });
     appStore.load();
     void subscribeQuitRequested();
 

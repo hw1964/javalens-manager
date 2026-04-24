@@ -853,7 +853,7 @@ impl ManagerService {
                 let reference = self
                     .resolve_runtime_reference_with(project, settings, installed_runtime.as_ref())
                     .ok()?;
-                let server_id = format!("jl-{}", project.assigned_port);
+                let server_id = mcp_server_id_for_project(project);
                 let mut env = HashMap::new();
                 env.insert("JAVALENS_PROJECT_ID".into(), project.id.clone());
                 env.insert(
@@ -1954,7 +1954,58 @@ fn build_rule_block(client: &str, servers: &[ManagedDeployServer]) -> String {
     lines.join("\n")
 }
 
-/// Keys for MCP servers written by javalens-manager: short `jl-<port>` and legacy `javalens-<projectId>`.
+/// `jl-` with port and a short project label; legacy `javalens-` (long id).
+fn mcp_server_id_for_project(project: &ProjectRecord) -> String {
+    const MAX_ID_LEN: usize = 48;
+    let slug = mcp_label_slug(&project.name, &project.project_path);
+    let base = format!("jl-{}-{}", project.assigned_port, slug);
+    if base.len() <= MAX_ID_LEN {
+        return base;
+    }
+    let prefix = format!("jl-{}-", project.assigned_port);
+    let budget = MAX_ID_LEN.saturating_sub(prefix.len());
+    let cut = if slug.len() > budget { &slug[..budget] } else { &slug };
+    format!("{prefix}{cut}")
+}
+
+fn mcp_label_slug(name: &str, project_path: &str) -> String {
+    const SLUG_MAX: usize = 28;
+    let trimmed = name.trim();
+    let raw: &str = if trimmed.is_empty() {
+        std::path::Path::new(project_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("project")
+    } else {
+        trimmed
+    };
+    let lower = raw.to_lowercase();
+    let mut out = String::new();
+    for ch in lower.chars() {
+        if ch.is_alphanumeric() {
+            out.push(ch);
+        } else if ch == '-' || ch == '_' || ch.is_whitespace() {
+            if !out.is_empty() && !out.ends_with('-') {
+                out.push('-');
+            }
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.is_empty() {
+        out.push_str("javalens");
+    }
+    if out.len() > SLUG_MAX {
+        out.truncate(SLUG_MAX);
+        while out.ends_with('-') {
+            out.pop();
+        }
+    }
+    out
+}
+
+/// Keys for MCP servers written by javalens-manager: `jl-…` and legacy `javalens-…`.
 fn is_javalens_managed_mcp_key(key: &str) -> bool {
     key.starts_with("jl-") || key.starts_with("javalens-")
 }
