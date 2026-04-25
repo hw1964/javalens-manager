@@ -861,9 +861,9 @@
     {/if}
   </div>
   <button
-    class:primary={isDirty}
+    class:primary={isDirty && !interactionDisabled}
     class="save-settings-button"
-    disabled={interactionDisabled}
+    disabled={interactionDisabled || !isDirty}
     on:click={handleSave}
     type="button"
   >
