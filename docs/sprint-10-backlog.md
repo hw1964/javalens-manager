@@ -207,6 +207,22 @@ Header `Total / Running / Stopped` chips count **services** (= unique ports), no
 - Use cases (mirror UC-1 to UC-4 in the open questions section below).
 - Migration note: existing projects keep their port assignments untouched. Use the port dropdown to merge two projects into one workspace by setting the same port.
 
+## Locked decisions (2026-04-25)
+
+User confirmed all recommendations:
+
+| # | Question | Decision |
+|---|---|---|
+| Q1 | Workspace label & MCP service ID | (b) Optional user-editable label in `settings.json`, falling back to first-project-slug |
+| Q2 | Workspace-import port allocation | (a) Always allocate one fresh free port for the whole import |
+| Q3 | Project list default view | (a) Grouped view — one parent card per port |
+| Q4 | Workspace-label storage location | (a) `settings.json` under `workspace_labels: { [port]: label }` |
+| Q5 | Live-update failure semantics | (a) Roll back projects.json change on MCP failure; surface error in UI |
+| Q6 | `load_project` MCP tool back-compat | (a) Keep clear-and-load semantics; manager uses `load_project` for first project, `add_project` for subsequent |
+| Q7 | Default port range | (a) 11100–11111 (12 ports) |
+| Q8 | Draft v0.10.2 release notes now | (a) Yes — `docs/release-notes/v0.10.2.md` |
+| Q9 | Sprint 10 version pairing | (a) Fork `v1.3.0` + manager `v0.11.0` shipping together |
+
 ## Open questions — confirm before implementation
 
 ### Q1. MCP service ID and workspace label storage
