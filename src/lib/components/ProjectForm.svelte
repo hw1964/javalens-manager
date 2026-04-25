@@ -208,7 +208,7 @@
       />
     </label>
 
-    <button class="primary" disabled={disabled || !canSubmit} type="submit">Save project</button>
+    <button class:primary={!disabled && canSubmit} disabled={disabled || !canSubmit} type="submit">Save project</button>
   </section>
 
   <hr class="section-divider" />
@@ -228,7 +228,7 @@
     </label>
 
     <button
-      class="primary"
+      class:primary={!disabled && !isImporting && workspaceFile.trim().length > 0}
       disabled={disabled || isImporting || workspaceFile.trim().length === 0}
       on:click={discoverFromWorkspace}
       type="button"

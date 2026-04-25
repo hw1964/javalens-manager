@@ -54,6 +54,50 @@
   let localJarPath = "";
   let releaseRepo = "";
   const DEFAULT_RELEASE_REPO = "hw1964/javalens-mcp";
+  const UPSTREAM_RELEASE_REPO = "pzalutski-pixel/javalens-mcp";
+
+  type ReleaseRepoChoice = "default" | "upstream" | "custom";
+  let releaseRepoChoice: ReleaseRepoChoice = "default";
+  let customRepoText = "";
+  let releaseRepoChoiceHydrated = false;
+
+  function deriveChoiceFromRepo(repo: string): { choice: ReleaseRepoChoice; custom: string } {
+    if (!repo || repo === DEFAULT_RELEASE_REPO) return { choice: "default", custom: "" };
+    if (repo === UPSTREAM_RELEASE_REPO) return { choice: "upstream", custom: "" };
+    return { choice: "custom", custom: repo };
+  }
+
+  function repoFromChoice(choice: ReleaseRepoChoice, custom: string): string {
+    switch (choice) {
+      case "default": return DEFAULT_RELEASE_REPO;
+      case "upstream": return UPSTREAM_RELEASE_REPO;
+      case "custom": return custom.trim();
+    }
+  }
+
+  // Switch source: save immediately, then download from the new source so the
+  // user gets the new repo's latest jar in one click. Skipped while the
+  // component is still hydrating from initial settings.
+  async function applyReleaseSourceChange() {
+    if (!releaseRepoChoiceHydrated) return;
+    const next = repoFromChoice(releaseRepoChoice, customRepoText);
+    if (releaseRepoChoice === "custom" && next.length === 0) {
+      // Wait for the user to type a custom repo before saving.
+      handleUserEdit();
+      return;
+    }
+    if (next === releaseRepo) {
+      handleUserEdit();
+      return;
+    }
+    releaseRepo = next;
+    handleUserEdit();
+    // Build payload with the new repo, dispatch save, then trigger download.
+    // The store's updateManagerSettings + downloadLatestRuntime serialize
+    // through state.isBusy so they don't race.
+    handleSave();
+    dispatch("download");
+  }
   let mcpMergeMode: McpMergeMode = "safeMerge";
   let mcpBackupBeforeWrite = true;
   let deployTargets: DeployTargetFlags = {
@@ -247,6 +291,12 @@
     mcpClientPaths = nextSettings.mcpClientPaths;
     deployTargets = nextSettings.deployTargets;
     releaseRepo = nextSettings.releaseRepo ?? "";
+    {
+      const derived = deriveChoiceFromRepo(releaseRepo);
+      releaseRepoChoice = derived.choice;
+      customRepoText = derived.custom;
+      releaseRepoChoiceHydrated = true;
+    }
     localJarPath =
       nextSettings.globalRuntimeSource.kind === "localJar" ? nextSettings.globalRuntimeSource.jarPath : "";
     hasHydratedSettings = true;
@@ -479,19 +529,34 @@
       </div>
 
       <label class="field">
-        <span>Release source (GitHub repo)</span>
-        <input
-          bind:value={releaseRepo}
+        <span>Release source</span>
+        <select
+          bind:value={releaseRepoChoice}
           disabled={interactionDisabled}
-          on:input={handleBoundEdit}
-          placeholder={DEFAULT_RELEASE_REPO}
-          spellcheck="false"
-          autocomplete="off"
-        />
+          on:change={applyReleaseSourceChange}
+        >
+          <option value="default">{DEFAULT_RELEASE_REPO} (recommended fork)</option>
+          <option value="upstream">{UPSTREAM_RELEASE_REPO} (upstream)</option>
+          <option value="custom">Custom…</option>
+        </select>
         <span class="hint">
-          owner/repo to pull JavaLens runtime releases from. Leave blank for the default ({DEFAULT_RELEASE_REPO}, the maintained fork with the source-resolution fix).
+          Switching source saves and downloads the new repo's latest release.
         </span>
       </label>
+
+      {#if releaseRepoChoice === "custom"}
+        <label class="field">
+          <span>Custom repo</span>
+          <input
+            bind:value={customRepoText}
+            disabled={interactionDisabled}
+            on:change={applyReleaseSourceChange}
+            placeholder="owner/repo"
+            spellcheck="false"
+            autocomplete="off"
+          />
+        </label>
+      {/if}
 
       <label class="field">
         <span>Global JavaLens Source</span>

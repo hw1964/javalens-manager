@@ -386,9 +386,12 @@ button {
 
 /* Inside the Exposed Services settings panel, let the probe-result + its
    inner service list fill the panel height so the right-hand card no
-   longer leaves dead space below the list. The .services-section panel
-   becomes a flex column; .probe-result and .service-list-scroll grow
-   to consume the remaining space. */
+   longer leaves dead space below the list — without growing the panel
+   beyond its peer (the JavaLens Runtime panel on the left). Trick:
+   flex: 1 1 0 (zero base) on the probe-result and inner list. The
+   probe-result contributes 0 to .services-section's intrinsic height,
+   so grid-stretch pairs the panel to the left card's height; flex:1
+   then expands the probe-result to fill whatever remains. */
 .services-section {
   display: flex;
   flex-direction: column;
@@ -396,7 +399,7 @@ button {
 }
 
 .services-section .probe-result {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -404,7 +407,7 @@ button {
 
 .services-section .service-list-scroll {
   max-height: none;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
 }
 
