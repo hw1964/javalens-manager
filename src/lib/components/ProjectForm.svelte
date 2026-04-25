@@ -20,6 +20,7 @@
   let name = "";
   let projectPath = "";
   let assignedPort = "";
+  let userTouchedPort = false;
   let lastSuggestedName = "";
   let workspaceFile = "";
   let candidates: WorkspaceProjectCandidate[] = [];
@@ -31,7 +32,13 @@
     name.trim().length > 0 &&
     projectPath.trim().length > 0 &&
     assignedPort.trim().length > 0;
-  $: if ((!assignedPort || assignedPort.trim().length === 0) && suggestedPort) {
+
+  // Auto-fill assignedPort with the latest server-suggested port whenever the
+  // user has not manually edited it. The reactive statement re-fires when
+  // suggestedPort changes (e.g., after a successful add the parent's
+  // suggestedPort shifts to the next free port), keeping the form in sync
+  // and preventing a "port already in use" error on the second submit.
+  $: if (!userTouchedPort && suggestedPort) {
     assignedPort = String(suggestedPort);
   }
 
@@ -151,7 +158,13 @@
 
     name = "";
     projectPath = "";
-    assignedPort = suggestedPort ? String(suggestedPort) : "";
+    // Re-arm the auto-fill: drop the just-submitted port and let the reactive
+    // $: statement above pick up the parent's freshly-shifted suggestedPort
+    // once the dashboard refresh completes. Without this, the form would
+    // submit the second project with the stale port and fail with
+    // "Port X is already in use".
+    userTouchedPort = false;
+    assignedPort = "";
   }
 </script>
 
@@ -184,7 +197,15 @@
 
     <label class="field">
       <span>Assigned port</span>
-      <input bind:value={assignedPort} disabled={disabled} min="1024" step="1" type="number" required />
+      <input
+        bind:value={assignedPort}
+        disabled={disabled}
+        min="1024"
+        step="1"
+        type="number"
+        required
+        on:input={() => (userTouchedPort = true)}
+      />
     </label>
 
     <button class="primary" disabled={disabled || !canSubmit} type="submit">Save project</button>

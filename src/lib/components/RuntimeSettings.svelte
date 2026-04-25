@@ -52,6 +52,8 @@
   let useSystemTray = true;
   let runtimeKind: "managed" | "localJar" = "managed";
   let localJarPath = "";
+  let releaseRepo = "";
+  const DEFAULT_RELEASE_REPO = "pzalutski-pixel/javalens-mcp";
   let mcpMergeMode: McpMergeMode = "safeMerge";
   let mcpBackupBeforeWrite = true;
   let deployTargets: DeployTargetFlags = {
@@ -106,7 +108,8 @@
       mcpClientPaths: nextSettings.mcpClientPaths,
       mcpMergeMode: nextSettings.mcpMergeMode,
       mcpBackupBeforeWrite: nextSettings.mcpBackupBeforeWrite,
-      deployTargets: nextSettings.deployTargets
+      deployTargets: nextSettings.deployTargets,
+      releaseRepo: nextSettings.releaseRepo
     };
   }
 
@@ -134,6 +137,7 @@
   }
 
   function normalizeSaveInput(input: UpdateSettingsInput): UpdateSettingsInput {
+    const trimmedRepo = input.releaseRepo?.trim();
     return {
       updatePolicy: input.updatePolicy,
       autoCheckForUpdates: input.autoCheckForUpdates,
@@ -153,7 +157,8 @@
         claude: input.deployTargets.claude,
         antigravity: input.deployTargets.antigravity,
         intellij: input.deployTargets.intellij
-      }
+      },
+      releaseRepo: trimmedRepo && trimmedRepo.length > 0 ? trimmedRepo : null
     };
   }
 
@@ -181,7 +186,8 @@
       mcpClientPaths,
       mcpMergeMode,
       mcpBackupBeforeWrite,
-      deployTargets
+      deployTargets,
+      releaseRepo: releaseRepo.trim().length > 0 ? releaseRepo.trim() : null
     };
   }
 
@@ -240,6 +246,7 @@
     mcpBackupBeforeWrite = nextSettings.mcpBackupBeforeWrite;
     mcpClientPaths = nextSettings.mcpClientPaths;
     deployTargets = nextSettings.deployTargets;
+    releaseRepo = nextSettings.releaseRepo ?? "";
     localJarPath =
       nextSettings.globalRuntimeSource.kind === "localJar" ? nextSettings.globalRuntimeSource.jarPath : "";
     hasHydratedSettings = true;
@@ -458,19 +465,34 @@
     <section class="panel stack settings-section runtime-section">
       <div class="section-intro">
         <h3>JavaLens Runtime</h3>
-        <p class="muted">Runtime updates and source selection. <a href="https://github.com/hw1964/javalens-manager/releases" target="_blank" rel="noopener noreferrer" style="color: #60a5fa; text-decoration: underline; margin-left: 0.5rem;">Check for javalens-manager updates</a></p>
+        <p class="muted">
+          Runtime source and update behavior.
+          <a
+            href="https://github.com/hw1964/javalens-manager/releases"
+            target="_blank"
+            rel="noopener noreferrer"
+            style="color: #60a5fa; text-decoration: underline; margin-left: 0.5rem;"
+          >
+            Check for javalens-manager updates
+          </a>
+        </p>
       </div>
-      <div class="runtime-summary">
-        <span class="runtime-chip">
-          Status: <strong>{releaseStatus?.kind ?? "unknown"}</strong>
+
+      <label class="field">
+        <span>Release source (GitHub repo)</span>
+        <input
+          bind:value={releaseRepo}
+          disabled={interactionDisabled}
+          on:input={handleBoundEdit}
+          placeholder={DEFAULT_RELEASE_REPO}
+          spellcheck="false"
+          autocomplete="off"
+        />
+        <span class="hint">
+          owner/repo to pull JavaLens runtime releases from. Leave blank for the default ({DEFAULT_RELEASE_REPO}).
+          The JAVALENS_RELEASE_REPO env var overrides this at runtime.
         </span>
-        <span class="runtime-chip">
-          Latest: <strong>{releaseStatus?.latestVersion ?? "unknown"}</strong>
-        </span>
-        <span class="runtime-chip">
-          Checked: <strong>{releaseStatus?.checkedAt ?? "n/a"}</strong>
-        </span>
-      </div>
+      </label>
 
       <label class="field">
         <span>Global JavaLens Source</span>
@@ -482,7 +504,16 @@
 
       {#if runtimeKind === "managed"}
         <p class="hint">
-          Active: {#if !installedRuntime}not installed{:else}<strong>v{installedRuntime.version}</strong>{/if}
+          Active:
+          {#if !installedRuntime}
+            not installed
+          {:else}
+            <strong>v{installedRuntime.version}</strong>
+          {/if}
+          {#if releaseStatus?.latestVersion && releaseStatus.latestVersion !== installedRuntime?.version}
+            &nbsp;&middot;&nbsp;
+            <span class="muted">Latest: v{releaseStatus.latestVersion}{releaseStatus.updateAvailable ? " (update available)" : ""}</span>
+          {/if}
         </p>
       {/if}
 
@@ -512,17 +543,16 @@
 
       <label class="checkbox-row">
         <input bind:checked={autoCheckForUpdates} disabled={interactionDisabled} on:change={handleBoundEdit} type="checkbox" />
-        <span>Check upstream JavaLens release on dashboard load</span>
+        <span>Auto-check release source on dashboard load</span>
       </label>
 
-      <div class="actions">
-        <button disabled={interactionDisabled} on:click={() => dispatch("download")} type="button">
-          {releaseStatus?.updateAvailable ? "Download update" : "Download latest"}
-        </button>
-        <button disabled={interactionDisabled} on:click={() => dispatch("refresh")} type="button">
-          Refresh release info
-        </button>
-      </div>
+      {#if updatePolicy === "ask" && releaseStatus?.updateAvailable}
+        <div class="actions">
+          <button disabled={interactionDisabled} on:click={() => dispatch("download")} type="button">
+            Download update v{releaseStatus.latestVersion}
+          </button>
+        </div>
+      {/if}
     </section>
 
     <section class="panel stack settings-section">

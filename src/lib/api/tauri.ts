@@ -45,6 +45,8 @@ export interface ManagerSettings {
   mcpMergeMode: McpMergeMode;
   mcpBackupBeforeWrite: boolean;
   deployTargets: DeployTargetFlags;
+  /** GitHub repo (owner/repo) for the managed JavaLens runtime release stream. */
+  releaseRepo: string;
   lastReleaseCheck?: string | null;
   lastSeenLatestVersion?: string | null;
 }
@@ -110,6 +112,8 @@ export interface UpdateSettingsInput {
   mcpMergeMode: McpMergeMode;
   mcpBackupBeforeWrite: boolean;
   deployTargets: DeployTargetFlags;
+  /** Optional override of the GitHub repo (owner/repo) for the runtime release stream. */
+  releaseRepo?: string | null;
 }
 
 /** Record of an installed managed runtime. */
