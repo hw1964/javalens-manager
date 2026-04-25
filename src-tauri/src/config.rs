@@ -172,8 +172,17 @@ pub struct ManagerSettings {
     pub mcp_backup_before_write: bool,
     #[serde(default = "default_deploy_targets")]
     pub deploy_targets: DeployTargetFlags,
+    #[serde(default = "default_release_repo")]
+    pub release_repo: String,
     pub last_release_check: Option<String>,
     pub last_seen_latest_version: Option<String>,
+}
+
+/// Default GitHub repo for the managed JavaLens runtime release stream.
+/// Override per-user via the JAVALENS_RELEASE_REPO env var or by editing
+/// settings.json. Format: "<owner>/<repo>".
+pub fn default_release_repo() -> String {
+    "pzalutski-pixel/javalens-mcp".to_string()
 }
 
 impl ManagerSettings {
@@ -192,6 +201,7 @@ impl ManagerSettings {
             mcp_merge_mode: default_mcp_merge_mode(),
             mcp_backup_before_write: default_mcp_backup_before_write(),
             deploy_targets: default_deploy_targets(),
+            release_repo: default_release_repo(),
             last_release_check: None,
             last_seen_latest_version: None,
         }
@@ -259,6 +269,10 @@ pub struct UpdateSettingsInput {
     pub mcp_merge_mode: McpMergeMode,
     pub mcp_backup_before_write: bool,
     pub deploy_targets: DeployTargetFlags,
+    /// Optional: when omitted, current settings.release_repo is preserved.
+    /// Lets older frontend builds save settings without resetting this field.
+    #[serde(default)]
+    pub release_repo: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -518,6 +532,9 @@ impl ConfigStore {
         settings.mcp_merge_mode = input.mcp_merge_mode;
         settings.mcp_backup_before_write = input.mcp_backup_before_write;
         settings.deploy_targets = sanitize_deploy_target_flags(input.deploy_targets);
+        if let Some(release_repo) = input.release_repo {
+            settings.release_repo = sanitize_release_repo(release_repo)?;
+        }
 
         write_json(&self.paths.settings_file, &*settings)?;
         Ok(settings.clone())
@@ -563,6 +580,34 @@ fn validate_port_range(start: u16, end: u16) -> Result<(), String> {
         return Err("portRangeStart must be >= 1024".into());
     }
     Ok(())
+}
+
+/// Validate and normalize a "<owner>/<repo>" GitHub release source string.
+/// Empty input falls back to the default upstream repo.
+fn sanitize_release_repo(input: String) -> Result<String, String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Ok(default_release_repo());
+    }
+    if trimmed.matches('/').count() != 1
+        || trimmed.starts_with('/')
+        || trimmed.ends_with('/')
+    {
+        return Err(format!(
+            "releaseRepo must be of the form '<owner>/<repo>'; got '{trimmed}'"
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Effective GitHub repo for the managed runtime release stream.
+/// JAVALENS_RELEASE_REPO env var wins over the per-user setting.
+pub fn effective_release_repo(settings: &ManagerSettings) -> String {
+    std::env::var("JAVALENS_RELEASE_REPO")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| settings.release_repo.clone())
 }
 
 fn read_projects(path: &Path) -> Result<ProjectsFile, String> {

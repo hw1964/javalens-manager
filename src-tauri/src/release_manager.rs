@@ -1,4 +1,6 @@
-use crate::config::{current_timestamp_string, display_path, ManagerSettings, UpdatePolicy};
+use crate::config::{
+    current_timestamp_string, display_path, effective_release_repo, ManagerSettings, UpdatePolicy,
+};
 use flate2::read::GzDecoder;
 use reqwest::blocking::Client;
 use semver::Version;
@@ -13,8 +15,14 @@ use tar::Archive;
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
-const LATEST_RELEASE_URL: &str =
-    "https://api.github.com/repos/pzalutski-pixel/javalens-mcp/releases/latest";
+/// Compose the GitHub releases-API URL for the configured release repo.
+/// Source of truth: JAVALENS_RELEASE_REPO env var, then settings.release_repo.
+fn latest_release_url(settings: &ManagerSettings) -> String {
+    format!(
+        "https://api.github.com/repos/{}/releases/latest",
+        effective_release_repo(settings)
+    )
+}
 
 /// Represents a cached, managed JavaLens runtime installation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,7 +127,7 @@ impl ReleaseManager {
             return Ok((installed, status));
         }
 
-        match self.fetch_latest_release() {
+        match self.fetch_latest_release(settings) {
             Ok(release) => {
                 let checked_at = current_timestamp_string();
                 settings.last_release_check = Some(checked_at.clone());
@@ -176,7 +184,7 @@ impl ReleaseManager {
         &self,
         settings: &mut ManagerSettings,
     ) -> Result<ManagedRuntimeRecord, String> {
-        let release = self.fetch_latest_release()?;
+        let release = self.fetch_latest_release(settings)?;
         let runtime = self.install_release(&release, settings)?;
         settings.last_release_check = Some(current_timestamp_string());
         settings.last_seen_latest_version = Some(release.version.clone());
@@ -235,10 +243,11 @@ impl ReleaseManager {
         Ok(runtimes.into_iter().next())
     }
 
-    fn fetch_latest_release(&self) -> Result<RemoteRelease, String> {
+    fn fetch_latest_release(&self, settings: &ManagerSettings) -> Result<RemoteRelease, String> {
+        let url = latest_release_url(settings);
         let response = self
             .client
-            .get(LATEST_RELEASE_URL)
+            .get(&url)
             .header("Accept", "application/vnd.github+json")
             .send()
             .map_err(|error| format!("failed to reach GitHub releases API: {error}"))?
@@ -654,5 +663,35 @@ mod tests {
         assert!(matches!(status.kind, ReleaseStatusKind::UpdateAvailable));
         assert!(status.update_available);
         assert_eq!(status.latest_version.as_deref(), Some("1.2.0"));
+    }
+
+    #[test]
+    fn latest_release_url_uses_setting_when_env_unset() {
+        let paths = AppPaths {
+            config_dir: PathBuf::from("/tmp/config"),
+            state_dir: PathBuf::from("/tmp/state"),
+            cache_dir: PathBuf::from("/tmp/cache"),
+            projects_file: PathBuf::from("/tmp/config/projects.json"),
+            settings_file: PathBuf::from("/tmp/config/settings.json"),
+            runtime_state_file: PathBuf::from("/tmp/state/runtime-state.json"),
+            default_data_root: PathBuf::from("/tmp/cache/javalens-manager"),
+            log_dir: PathBuf::from("/tmp/state/logs"),
+        };
+        let mut settings = ManagerSettings::default_for_paths(&paths);
+        // Ensure env var is not influencing this test.
+        std::env::remove_var("JAVALENS_RELEASE_REPO");
+
+        // Default upstream.
+        assert_eq!(
+            latest_release_url(&settings),
+            "https://api.github.com/repos/pzalutski-pixel/javalens-mcp/releases/latest"
+        );
+
+        // Custom (e.g. fork).
+        settings.release_repo = "hw1964/javalens-mcp".into();
+        assert_eq!(
+            latest_release_url(&settings),
+            "https://api.github.com/repos/hw1964/javalens-mcp/releases/latest"
+        );
     }
 }
