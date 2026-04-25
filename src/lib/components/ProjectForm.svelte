@@ -224,9 +224,17 @@
       <div class="field-row">
         <input bind:value={workspaceFile} disabled={disabled || isImporting} placeholder="/path/to/workspace.code-workspace" />
         <button disabled={disabled || isImporting} on:click={chooseWorkspaceFile} type="button">Browse</button>
-        <button disabled={disabled || isImporting} on:click={discoverFromWorkspace} type="button">Discover</button>
       </div>
     </label>
+
+    <button
+      class="primary"
+      disabled={disabled || isImporting || workspaceFile.trim().length === 0}
+      on:click={discoverFromWorkspace}
+      type="button"
+    >
+      Discover
+    </button>
 
     {#if candidates.length > 0}
       <div class="stack candidate-list">

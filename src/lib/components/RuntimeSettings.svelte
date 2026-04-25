@@ -489,8 +489,7 @@
           autocomplete="off"
         />
         <span class="hint">
-          owner/repo to pull JavaLens runtime releases from. Leave blank for the default ({DEFAULT_RELEASE_REPO}).
-          The JAVALENS_RELEASE_REPO env var overrides this at runtime.
+          owner/repo to pull JavaLens runtime releases from. Leave blank for the upstream default ({DEFAULT_RELEASE_REPO}).
         </span>
       </label>
 

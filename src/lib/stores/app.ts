@@ -390,7 +390,12 @@ export function createAppStore() {
 
     pollInFlight = true;
     try {
-      const results = await Promise.all(
+      // Use allSettled so a single project's status fetch failing (e.g. it was
+      // deleted between snapshotting projectIds and the poll resolving) does
+      // not cascade into a global error banner. Per-project failures are
+      // silently dropped here; the dashboard refresh on the next mutation
+      // will reconcile the project list.
+      const results = await Promise.allSettled(
         projectIds.map(async (projectId) => ({
           projectId,
           status: await getRuntimeStatus(projectId)
@@ -398,21 +403,15 @@ export function createAppStore() {
       );
 
       update((state) => {
+        const currentIds = new Set((state.projects ?? []).map((project) => project.id));
         const runtimeStatuses = { ...(state.runtimeStatuses ?? {}) };
         for (const result of results) {
-          runtimeStatuses[result.projectId] = result.status;
+          if (result.status === "fulfilled" && currentIds.has(result.value.projectId)) {
+            runtimeStatuses[result.value.projectId] = result.value.status;
+          }
         }
-
-        return {
-          ...state,
-          runtimeStatuses
-        };
+        return { ...state, runtimeStatuses };
       });
-    } catch (error) {
-      update((state) => ({
-        ...state,
-        error: normalizeError(error)
-      }));
     } finally {
       pollInFlight = false;
     }

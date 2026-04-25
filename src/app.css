@@ -208,6 +208,11 @@ button {
 
 .settings-section {
   align-content: start;
+  /* Ensure paired panels (e.g. JavaLens Runtime + Exposed Services) end at
+     the same y so their bottom borders line up regardless of content
+     length differences. align-items: stretch on the parent grid handles
+     this for most browsers; this explicit height removes the corner cases. */
+  height: 100%;
 }
 
 .paired-section-intro {
