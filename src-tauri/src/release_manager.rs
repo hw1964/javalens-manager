@@ -681,17 +681,17 @@ mod tests {
         // Ensure env var is not influencing this test.
         std::env::remove_var("JAVALENS_RELEASE_REPO");
 
-        // Default upstream.
-        assert_eq!(
-            latest_release_url(&settings),
-            "https://api.github.com/repos/pzalutski-pixel/javalens-mcp/releases/latest"
-        );
-
-        // Custom (e.g. fork).
-        settings.release_repo = "hw1964/javalens-mcp".into();
+        // Default: fork with the source-resolution fix.
         assert_eq!(
             latest_release_url(&settings),
             "https://api.github.com/repos/hw1964/javalens-mcp/releases/latest"
+        );
+
+        // Custom override (e.g. legacy upstream or another fork).
+        settings.release_repo = "pzalutski-pixel/javalens-mcp".into();
+        assert_eq!(
+            latest_release_url(&settings),
+            "https://api.github.com/repos/pzalutski-pixel/javalens-mcp/releases/latest"
         );
     }
 }

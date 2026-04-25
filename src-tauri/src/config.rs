@@ -179,11 +179,20 @@ pub struct ManagerSettings {
 }
 
 /// Default GitHub repo for the managed JavaLens runtime release stream.
-/// Override per-user via the JAVALENS_RELEASE_REPO env var or by editing
-/// settings.json. Format: "<owner>/<repo>".
+/// hw1964/javalens-mcp is the fork that ships the source-resolution fixes
+/// (pom.xml <sourceDirectory> and Eclipse .classpath). The legacy upstream
+/// (pzalutski-pixel/javalens-mcp) is preserved in OLD_DEFAULT_RELEASE_REPO
+/// only for the one-shot migration in read_settings.
+/// Override per-user by editing settings.json or via the JAVALENS_RELEASE_REPO
+/// env var. Format: "<owner>/<repo>".
 pub fn default_release_repo() -> String {
-    "pzalutski-pixel/javalens-mcp".to_string()
+    "hw1964/javalens-mcp".to_string()
 }
+
+/// The pre-v0.10.0 default. Used only by read_settings to migrate existing
+/// settings.json files that still hold the legacy upstream value to the new
+/// fork-based default. Once migrated, this constant is unused.
+const OLD_DEFAULT_RELEASE_REPO: &str = "pzalutski-pixel/javalens-mcp";
 
 impl ManagerSettings {
     pub(crate) fn default_for_paths(paths: &AppPaths) -> Self {
@@ -647,6 +656,15 @@ fn read_settings(path: &Path, paths: &AppPaths) -> Result<ManagerSettings, Strin
     if validate_port_range(settings.port_range_start, settings.port_range_end).is_err() {
         settings.port_range_start = default_port_range_start();
         settings.port_range_end = default_port_range_end();
+    }
+    // One-shot migration: settings.json files written by v0.10.0 carry the
+    // legacy upstream repo as the default value. Now that the fork is the
+    // shipped default, transparently rewrite that legacy value to the new
+    // default so users get our source-resolution fixes without needing to
+    // edit settings.json by hand. Explicit user choices (anything other
+    // than the legacy default) are preserved.
+    if settings.release_repo == OLD_DEFAULT_RELEASE_REPO {
+        settings.release_repo = default_release_repo();
     }
     settings.mcp_client_paths = merge_detected_mcp_paths(settings.mcp_client_paths);
     Ok(settings)

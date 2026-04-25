@@ -330,9 +330,14 @@ impl ManagerService {
     }
 
     /// Updates manager settings.
+    /// If the `release_repo` value changed, triggers a fresh release-status
+    /// re-poll so the dashboard immediately reflects the new repo's latest
+    /// release rather than showing the cached status from the previous repo.
     pub fn update_settings(&self, input: UpdateSettingsInput) -> Result<ManagerDashboard, String> {
-        self.config_store.update_settings(input)?;
-        self.build_dashboard(false)
+        let previous_repo = self.config_store.get_settings().release_repo.clone();
+        let updated = self.config_store.update_settings(input)?;
+        let release_repo_changed = updated.release_repo != previous_repo;
+        self.build_dashboard(release_repo_changed)
     }
 
     /// Redetects MCP client paths based on the current system.

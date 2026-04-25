@@ -53,7 +53,7 @@
   let runtimeKind: "managed" | "localJar" = "managed";
   let localJarPath = "";
   let releaseRepo = "";
-  const DEFAULT_RELEASE_REPO = "pzalutski-pixel/javalens-mcp";
+  const DEFAULT_RELEASE_REPO = "hw1964/javalens-mcp";
   let mcpMergeMode: McpMergeMode = "safeMerge";
   let mcpBackupBeforeWrite = true;
   let deployTargets: DeployTargetFlags = {
@@ -489,7 +489,7 @@
           autocomplete="off"
         />
         <span class="hint">
-          owner/repo to pull JavaLens runtime releases from. Leave blank for the upstream default ({DEFAULT_RELEASE_REPO}).
+          owner/repo to pull JavaLens runtime releases from. Leave blank for the default ({DEFAULT_RELEASE_REPO}, the maintained fork with the source-resolution fix).
         </span>
       </label>
 
@@ -554,7 +554,7 @@
       {/if}
     </section>
 
-    <section class="panel stack settings-section">
+    <section class="panel stack settings-section services-section">
       <div class="section-intro">
         <h3>Exposed Services</h3>
         <p class="muted">Probe JavaLens live to detect exposed MCP tools.</p>

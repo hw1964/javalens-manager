@@ -384,6 +384,30 @@ button {
   padding-right: 0.35rem;
 }
 
+/* Inside the Exposed Services settings panel, let the probe-result + its
+   inner service list fill the panel height so the right-hand card no
+   longer leaves dead space below the list. The .services-section panel
+   becomes a flex column; .probe-result and .service-list-scroll grow
+   to consume the remaining space. */
+.services-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.services-section .probe-result {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.services-section .service-list-scroll {
+  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .service-item {
   display: grid;
   gap: 0.08rem;
