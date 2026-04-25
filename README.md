@@ -2,11 +2,19 @@
 
 Desktop manager for running and orchestrating JavaLens MCP servers across multiple Java projects.
 
-`javalens-manager` provides a clean desktop experience for managing upstream `javalens-mcp` instances, project workspaces, runtime state, and MCP client setup. It does not fork or modify `javalens` itself.
+`javalens-manager` provides a clean desktop experience for managing `javalens-mcp` instances, project workspaces, runtime state, and MCP client setup. By default it pulls the runtime from a maintained fork ([hw1964/javalens-mcp](https://github.com/hw1964/javalens-mcp)) that ships fixes upstream has not picked up yet — see *Release source* in the Settings UI to switch sources. The manager itself remains a pure orchestrator.
 
 ## Status
 
-**Beta (v0.9.2)**: `javalens-manager` is now a fully functional desktop application on Linux. It supports registering multiple Java projects, automatically downloading and managing JavaLens runtimes, and deploying MCP configurations directly to Cursor, Claude Desktop, Antigravity, and IntelliJ. While feature-complete for Linux, broader OS support and QA testing are ongoing before a stable 1.0 release.
+**Beta (v0.10.0)**: `javalens-manager` is a fully functional desktop application on Linux. It supports registering multiple Java projects, automatically downloading and managing JavaLens runtimes, and deploying MCP configurations directly to Cursor, Claude Desktop, Antigravity, and IntelliJ. While feature-complete for Linux, broader OS support and QA testing are ongoing before a stable 1.0 release.
+
+### What's new in v0.10.0
+
+- **Release source is configurable.** Settings → JavaLens Runtime → *Release source* lets you switch between the maintained fork (default), the original upstream, or a custom GitHub repo. Switching the dropdown auto-saves and pulls the new repo's latest jar in one click.
+- **Source-resolution fix shipped via the fork.** `javalens-mcp` 1.2.1 (in the fork) honors Maven `<sourceDirectory>` / `<testSourceDirectory>` overrides and Eclipse `.classpath` `kind="src"` / `kind="lib"` entries. Hybrid Maven+PDE projects and non-conventional Eclipse layouts are now indexed correctly.
+- **Settings UI decluttered.** The Runtime panel drops the always-visible status chips and Refresh button; auto-update on dashboard load covers refreshes, and a Download button appears only when an update is actually available.
+- **Bug fix: project list refresh.** Adding a second project via the form no longer lands on a stale port; the form re-arms the suggested port after each successful save. Stale "Unknown project id" errors after deletion are also gone.
+- **Polish.** Equal-height Settings panels, full-width Discover button, primary-blue button color only when the action is actually clickable.
 
 ## Docs
 
@@ -37,8 +45,8 @@ Alternatively, you can download the `.deb` or `.AppImage` files manually from th
 If you launch the `.AppImage` manually, ensure it has executable permission first:
 
 ```bash
-chmod +x javalens-manager_0.9.2_amd64.AppImage
-./javalens-manager_0.9.2_amd64.AppImage
+chmod +x javalens-manager_0.10.0_amd64.AppImage
+./javalens-manager_0.10.0_amd64.AppImage
 ```
 
 ## What It Is
