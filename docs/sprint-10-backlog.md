@@ -2,7 +2,7 @@
 
 ## Goal
 
-Consolidate javalens MCP services so that multiple Java projects can share one server process. Use **port number as the workspace identity** — projects sharing an `assigned_port` run as one MCP service against one in-memory Eclipse workspace. Different ports = independent services. Drops Antigravity tool registrations from **3,969 (63 services × 63 tools/service)** today to **63 with one workspace** (or 189 with three, 315 with five). The number of services drops from 63 to 1–N, where N is small (typically 1–3 in practice; 12 paper headroom from the port range cap).
+Consolidate javalens MCP services so that multiple Java projects can share one server process. Use **port number as the workspace identity** — projects sharing an `assigned_port` run as one MCP service against one in-memory Eclipse workspace. Different ports = independent services. Drops Antigravity tool registrations from **1,764 (28 projects × 63 tools per service)** today to **63 with one workspace** (or 189 with three, 315 with five). The number of services drops from 28 to 1–N, where N is small (typically 1–3 in practice; 12 paper headroom from the port range cap).
 
 End-of-sprint outcome:
 - One javalens process serves N projects on the same port. Tools accept optional `projectKey` to scope queries; absent = search across all loaded projects.
@@ -16,7 +16,7 @@ Reference plan: `~/.claude/plans/make-a-plan-happy-fern.md` (Sprint 10 section i
 
 ## Problem Statement
 
-- 63 javalens services × 63 tools per service = 3,969 tool registrations against Antigravity, with the service count itself sitting near the ~100-service ceiling. Adding new projects increases both numbers in lock-step.
+- 28 javalens services (one per registered project) × 63 tools per service = 1,764 tool registrations against Antigravity. Each new project adds another service and another 63 tool entries; the path to the ~100-service ceiling is straight-line.
 - 63 JVM processes running simultaneously is heavy on RAM and slow on cold start.
 - Related projects (e.g., the dozen JATS2 OSGi bundles) belong to one logical workspace but live in separate, unrelated MCP services today.
 - The `javalens-mcp` `WorkspaceManager` is single-project by design. Tools assume one current `IJavaProject`.
@@ -271,7 +271,7 @@ Recommend **(a)** — fewer services is the goal, 12 covers the realistic max wo
 - [ ] All Java tests in Phase A pass; `mvn clean verify` green.
 - [ ] `v1.3.0` of the fork is published with `add_project`, `remove_project`, `list_projects`, multi-project `WorkspaceManager`, and `projectKey`-aware analysis tools.
 - [ ] Manager's port-grouped spawn lands `add_project` / `remove_project` calls correctly for live updates; verified manually with a 5-bundle workspace import.
-- [ ] Service count drops from 63 to 1–3 (= number of workspaces the user chose). Antigravity tool registrations drop from 3,969 (63 × 63) to 63 × <workspaces>, i.e. typically 63–189.
+- [ ] Service count drops from 28 to 1–3 (= number of workspaces the user chose). Antigravity tool registrations drop from 1,764 (28 × 63) to 63 × <workspaces>, i.e. typically 63–189.
 - [ ] Help docs explain port-as-workspace.
 - [ ] CHANGELOG / README mention v0.10.0 capabilities and the upcoming v0.11.0 (manager) targeting fork v1.3.0.
 
