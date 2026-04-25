@@ -27,6 +27,19 @@
   let selectedPaths: string[] = [];
   let importMessage = "";
   let isImporting = false;
+  // Path that produced the currently-displayed candidate list. Discover button
+  // greys out once the user has discovered the current path; clicking Discover
+  // again at the same path is a no-op so the button shouldn't invite it.
+  let lastDiscoveredFile = "";
+
+  $: canDiscover =
+    !disabled &&
+    !isImporting &&
+    workspaceFile.trim().length > 0 &&
+    workspaceFile.trim() !== lastDiscoveredFile;
+
+  $: canImportSelected =
+    !disabled && !isImporting && selectedPaths.length > 0;
 
   $: canSubmit =
     name.trim().length > 0 &&
@@ -100,13 +113,15 @@
 
   async function discoverFromWorkspace() {
     importMessage = "";
-    if (!workspaceFile.trim()) {
+    const path = workspaceFile.trim();
+    if (!path) {
       importMessage = "Choose a .code-workspace file first.";
       return;
     }
     try {
-      candidates = await discoverWorkspaceProjects(workspaceFile.trim());
+      candidates = await discoverWorkspaceProjects(path);
       selectedPaths = candidates.map((candidate) => candidate.projectPath);
+      lastDiscoveredFile = path;
       if (candidates.length === 0) {
         importMessage = "No Maven/Gradle or Eclipse/PDE Java projects found.";
       }
@@ -141,6 +156,10 @@
       }
       candidates = [];
       selectedPaths = [];
+      // Return the import section to its initial empty state so the buttons
+      // grey out and the form is ready for the next operation.
+      workspaceFile = "";
+      lastDiscoveredFile = "";
       dispatch("imported");
     } catch (error) {
       importMessage = String(error);
@@ -228,8 +247,8 @@
     </label>
 
     <button
-      class:primary={!disabled && !isImporting && workspaceFile.trim().length > 0}
-      disabled={disabled || isImporting || workspaceFile.trim().length === 0}
+      class:primary={canDiscover}
+      disabled={!canDiscover}
       on:click={discoverFromWorkspace}
       type="button"
     >
@@ -251,8 +270,8 @@
         {/each}
       </div>
       <button
-        class="primary"
-        disabled={disabled || isImporting || selectedPaths.length === 0}
+        class:primary={canImportSelected}
+        disabled={!canImportSelected}
         on:click={importSelected}
         type="button"
       >
