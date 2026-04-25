@@ -10,7 +10,7 @@ Desktop manager for running and orchestrating JavaLens MCP servers across multip
 
 ### What's new in v0.10.1
 
-- **Icon refresh.** The white outer ring around the magnifying glass is now a very dark navy (`#0c1838`) so the icon sits cleanly inside dark dock/taskbar themes.
+- **Icon refresh.** The cream-white outer ring is gone — the slate body now extends to the canvas edge, and the magnifying glass + J inside are enlarged to fill the freed space. Cleaner against any dock/taskbar theme.
 - **Discover and Import-selected button states.** After Discover finishes, the button greys out (re-clicking the same path is a no-op). After a successful workspace import, the form resets — workspace file, candidates, and selection all clear so the form is ready for the next operation.
 
 ### What's new in v0.10.0
