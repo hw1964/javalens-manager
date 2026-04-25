@@ -6,11 +6,15 @@ Desktop manager for running and orchestrating JavaLens MCP servers across multip
 
 ## Status
 
-**Beta (v0.10.1)**: `javalens-manager` is a fully functional desktop application on Linux. It supports registering multiple Java projects, automatically downloading and managing JavaLens runtimes, and deploying MCP configurations directly to Cursor, Claude Desktop, Antigravity, and IntelliJ. While feature-complete for Linux, broader OS support and QA testing are ongoing before a stable 1.0 release.
+**Beta (v0.10.2)**: `javalens-manager` is a fully functional desktop application on Linux. It supports registering multiple Java projects, automatically downloading and managing JavaLens runtimes, and deploying MCP configurations directly to Cursor, Claude Desktop, Antigravity, and IntelliJ. While feature-complete for Linux, broader OS support and QA testing are ongoing before a stable 1.0 release.
+
+### What's new in v0.10.2
+
+- **Icon iteration.** The intermediate dark-navy ring from v0.10.1 is gone — the slate body now extends fully to the canvas edge, and the magnifying glass + J inside are enlarged ~14% to fill the freed space. Cleaner against any dock/taskbar theme.
 
 ### What's new in v0.10.1
 
-- **Icon refresh.** The cream-white outer ring is gone — the slate body now extends to the canvas edge, and the magnifying glass + J inside are enlarged to fill the freed space. Cleaner against any dock/taskbar theme.
+- **Icon refresh (intermediate).** The cream-white outer ring was repainted to a very dark navy (`#0c1838`). v0.10.2 takes this further and removes the ring entirely — see above.
 - **Discover and Import-selected button states.** After Discover finishes, the button greys out (re-clicking the same path is a no-op). After a successful workspace import, the form resets — workspace file, candidates, and selection all clear so the form is ready for the next operation.
 
 ### What's new in v0.10.0
@@ -50,8 +54,8 @@ Alternatively, you can download the `.deb` or `.AppImage` files manually from th
 If you launch the `.AppImage` manually, ensure it has executable permission first:
 
 ```bash
-chmod +x javalens-manager_0.10.1_amd64.AppImage
-./javalens-manager_0.10.1_amd64.AppImage
+chmod +x javalens-manager_0.10.2_amd64.AppImage
+./javalens-manager_0.10.2_amd64.AppImage
 ```
 
 ## What It Is
