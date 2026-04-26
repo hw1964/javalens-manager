@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     sync::Mutex,
@@ -174,6 +175,19 @@ pub struct ManagerSettings {
     pub deploy_targets: DeployTargetFlags,
     #[serde(default = "default_release_repo")]
     pub release_repo: String,
+    /// Sprint 10: opt-in single-workspace mode. When true, the manager
+    /// spawns one javalens process per unique `assigned_port` and loads
+    /// every project on that port into the shared in-memory Eclipse
+    /// workspace via MCP `add_project` calls. Default `false` for v0.10.x;
+    /// Sprint 11 (v0.11.0) will flip the default to `true`.
+    #[serde(default)]
+    pub single_workspace_mode: bool,
+    /// Sprint 10: optional per-port workspace label. Drives the MCP
+    /// service ID slug (`jl-<port>-<label>`) and the grouped Dashboard
+    /// header in single-workspace mode. Falls back to the lexicographically
+    /// first project's slug when unset.
+    #[serde(default)]
+    pub workspace_labels: BTreeMap<u16, String>,
     pub last_release_check: Option<String>,
     pub last_seen_latest_version: Option<String>,
 }
@@ -211,6 +225,8 @@ impl ManagerSettings {
             mcp_backup_before_write: default_mcp_backup_before_write(),
             deploy_targets: default_deploy_targets(),
             release_repo: default_release_repo(),
+            single_workspace_mode: false,
+            workspace_labels: BTreeMap::new(),
             last_release_check: None,
             last_seen_latest_version: None,
         }
@@ -282,6 +298,11 @@ pub struct UpdateSettingsInput {
     /// Lets older frontend builds save settings without resetting this field.
     #[serde(default)]
     pub release_repo: Option<String>,
+    /// Sprint 10: optional toggle for single-workspace mode. When omitted,
+    /// the current setting is preserved (so older frontend builds saving
+    /// settings don't accidentally reset it).
+    #[serde(default)]
+    pub single_workspace_mode: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -544,7 +565,26 @@ impl ConfigStore {
         if let Some(release_repo) = input.release_repo {
             settings.release_repo = sanitize_release_repo(release_repo)?;
         }
+        if let Some(single_workspace_mode) = input.single_workspace_mode {
+            settings.single_workspace_mode = single_workspace_mode;
+        }
 
+        write_json(&self.paths.settings_file, &*settings)?;
+        Ok(settings.clone())
+    }
+
+    /// Sprint 10: set or clear the friendly label for a workspace identified
+    /// by its port. Empty/blank label removes the entry (label falls back to
+    /// the lexicographically first project's slug). Used by the inline edit
+    /// in the grouped Dashboard header.
+    pub fn set_workspace_label(&self, port: u16, label: String) -> Result<ManagerSettings, String> {
+        let trimmed = label.trim();
+        let mut settings = self.settings.lock().expect("settings mutex poisoned");
+        if trimmed.is_empty() {
+            settings.workspace_labels.remove(&port);
+        } else {
+            settings.workspace_labels.insert(port, trimmed.to_string());
+        }
         write_json(&self.paths.settings_file, &*settings)?;
         Ok(settings.clone())
     }
