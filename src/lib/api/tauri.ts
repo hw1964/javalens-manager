@@ -38,8 +38,6 @@ export interface ManagerSettings {
   manualFallbackJarPath?: string | null;
   dataRoot: string;
   globalRuntimeSource: RuntimeSource;
-  portRangeStart: number;
-  portRangeEnd: number;
   useSystemTray: boolean;
   mcpClientPaths: McpClientPaths;
   mcpMergeMode: McpMergeMode;
@@ -89,14 +87,20 @@ export interface ProjectRecord {
   id: string;
   name: string;
   projectPath: string;
-  assignedPort: number;
+  /** Sprint 10 v0.10.4: logical workspace identifier. Multiple projects
+   * sharing this name run as one MCP service. */
+  workspaceName: string;
+  /** Legacy v0.10.3 field. Kept on disk for one release cycle for
+   * migration purposes; ignored at runtime. */
+  assignedPort?: number;
 }
 
 /** Input for adding a new project. */
 export interface AddProjectInput {
   name: string;
   projectPath: string;
-  assignedPort?: number;
+  /** Sprint 10 v0.10.4: target workspace. Empty/missing → "workspace-default". */
+  workspaceName: string;
 }
 
 /** Input for updating manager settings. */
@@ -105,8 +109,6 @@ export interface UpdateSettingsInput {
   autoCheckForUpdates: boolean;
   dataRoot: string;
   globalRuntimeSource: RuntimeSource;
-  portRangeStart: number;
-  portRangeEnd: number;
   useSystemTray: boolean;
   mcpClientPaths: McpClientPaths;
   mcpMergeMode: McpMergeMode;
@@ -135,11 +137,14 @@ export interface ReleaseStatus {
   detail: string;
 }
 
-/** Status of a specific project's runtime. */
+/** Status of a specific project's runtime. Sprint 10 v0.10.4: multiple
+ * projects sharing a `workspaceName` reflect the same underlying javalens
+ * process — same PID, same workspace dir. */
 export interface RuntimeStatusRecord {
   projectId: string;
   phase: RuntimePhase;
-  assignedPort: number;
+  /** Sprint 10 v0.10.4: workspace this project belongs to. */
+  workspaceName: string;
   transport: string;
   pid?: number | null;
   workspaceDir: string;
@@ -158,7 +163,10 @@ export interface ManagerDashboard {
   installedRuntime?: ManagedRuntimeRecord | null;
   projects: ProjectRecord[];
   runtimeStatuses: Record<string, RuntimeStatusRecord>;
-  suggestedPort?: number | null;
+  /** Sprint 10 v0.10.4: a workspace name to pre-fill in the "Add project"
+   * form. Surfaces an existing workspace if one exists; null/undefined
+   * means the UI falls back to a fresh name. */
+  suggestedWorkspaceName?: string | null;
   servicesInventory: ServicesInventory;
 }
 
@@ -232,10 +240,16 @@ export interface QuitPromptContext {
 /** Action to take when quitting the application. */
 export type QuitAction = "cancel" | "hideToTray" | "stopAndQuit" | "quit";
 
-/** Input for updating a project's assigned port. */
-export interface UpdateProjectPortInput {
+/** Sprint 10 v0.10.4: input for moving a project to a different workspace. */
+export interface SetProjectWorkspaceInput {
   projectId: string;
-  assignedPort: number;
+  workspaceName: string;
+}
+
+/** Sprint 10 v0.10.4: input for renaming a workspace. */
+export interface RenameWorkspaceInput {
+  oldName: string;
+  newName: string;
 }
 
 /** Candidate project found during workspace discovery. */
@@ -249,6 +263,9 @@ export interface WorkspaceProjectCandidate {
 export interface WorkspaceImportInput {
   workspaceFile: string;
   selectedPaths: string[];
+  /** Sprint 10 v0.10.4: target workspace for the imported projects.
+   * Empty/missing → "workspace-default". */
+  workspaceName: string;
 }
 
 /** Result of importing projects from a workspace. */
@@ -267,14 +284,23 @@ export function addProject(input: AddProjectInput): Promise<ProjectRecord> {
   return invoke("add_project", { input });
 }
 
-/** Suggests the next available port for a project. */
-export function suggestNextPort(): Promise<number> {
-  return invoke("suggest_next_port");
+/** Sprint 10 v0.10.4: move a project to a different workspace. Replaces
+ * the legacy `updateProjectPort`. */
+export function setProjectWorkspace(input: SetProjectWorkspaceInput): Promise<ManagerDashboard> {
+  return invoke("set_project_workspace", { input });
 }
 
-/** Updates the assigned port for a project. */
-export function updateProjectPort(input: UpdateProjectPortInput): Promise<ManagerDashboard> {
-  return invoke("update_project_port", { input });
+/** Sprint 10 v0.10.4: rename a workspace. Updates every member project
+ * record + workspace.json. */
+export function renameWorkspace(input: RenameWorkspaceInput): Promise<ManagerDashboard> {
+  return invoke("rename_workspace", { input });
+}
+
+/** Sprint 10 v0.10.4: delete a workspace entirely. Stops the workspace
+ * process, deletes every member project record, and removes the JDT
+ * data dir on disk. */
+export function deleteWorkspace(workspaceName: string): Promise<ManagerDashboard> {
+  return invoke("delete_workspace", { workspaceName });
 }
 
 /** Deletes a project by its ID. */

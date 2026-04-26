@@ -22,7 +22,10 @@
   export let onStartAll: () => void;
   export let onStopAll: () => void;
   export let onDeleteAll: () => void;
-  export let onUpdatePort: (projectId: string, assignedPort: number) => void;
+  /** Sprint 10 v0.10.4: move a project to a different (existing or new) workspace. */
+  export let onSetWorkspace: (projectId: string, workspaceName: string) => void;
+  export let onRenameWorkspace: (oldName: string, newName: string) => void;
+  export let onDeleteWorkspace: (workspaceName: string) => void;
   export let onDeploy: (mode: DeployMode, targetClients?: string[]) => void;
   export let deployTargetDefaults: DeployTargetFlags = {
     cursor: true,
@@ -41,8 +44,6 @@
     { key: "intellij", label: "IntelliJ" }
   ];
 
-  let draftPorts: Record<string, string> = {};
-  let portInputErrors: Record<string, string> = {};
   let rowRefs: Record<string, HTMLElement> = {};
   let lastAutoScrolledSelection: string | undefined;
   let showDeployTargetPicker = false;
@@ -142,33 +143,18 @@
     return null;
   }
 
-  function getDraftPort(project: ProjectRecord): string {
-    return draftPorts[project.id] ?? String(project.assignedPort);
-  }
-
-  function updateDraftPort(projectId: string, value: string) {
-    draftPorts = {
-      ...draftPorts,
-      [projectId]: value
-    };
-    if (portInputErrors[projectId]) {
-      const nextErrors = { ...portInputErrors };
-      delete nextErrors[projectId];
-      portInputErrors = nextErrors;
+  /** Sprint 10 v0.10.4: prompt for a new workspace name and move the
+   * project. The minimal UI for this — a button on the project row that
+   * opens a prompt() — is replaced by the grouped Dashboard view in a
+   * follow-up; this stub keeps the wiring for the new API. */
+  function moveProjectToWorkspace(project: ProjectRecord) {
+    const target = window.prompt(
+      `Move "${project.name}" to which workspace?\nCurrently in: ${project.workspaceName}`,
+      project.workspaceName
+    );
+    if (target && target.trim().length > 0 && target.trim() !== project.workspaceName) {
+      onSetWorkspace(project.id, target.trim());
     }
-  }
-
-  function applyPort(project: ProjectRecord) {
-    const raw = (draftPorts[project.id] ?? String(project.assignedPort)).trim();
-    const parsed = Number(raw);
-    if (!Number.isInteger(parsed) || parsed < 1024 || parsed > 65535) {
-      portInputErrors = {
-        ...portInputErrors,
-        [project.id]: "Port must be an integer between 1024 and 65535."
-      };
-      return;
-    }
-    onUpdatePort(project.id, parsed);
   }
 
   $: phases = projects.map((project) => runtimeStatuses[project.id]?.phase ?? "stopped");
@@ -342,17 +328,15 @@
               <p class="path" title={project.projectPath}>{project.projectPath}</p>
               <div class="meta">
                 <div class="port-row">
-                  <span>Port</span>
+                  <span>Workspace</span>
                   <div class="port-editor">
-                    <input
-                      aria-label={`Assigned port for ${project.name}`}
+                    <span title={`Workspace ${project.workspaceName}`}>{project.workspaceName}</span>
+                    <button
                       disabled={disabled}
-                      inputmode="numeric"
-                      on:input={(event) => updateDraftPort(project.id, (event.currentTarget as HTMLInputElement).value)}
-                      value={getDraftPort(project)}
-                    />
-                    <button disabled={disabled} on:click={() => applyPort(project)} type="button">
-                      Set
+                      on:click={() => moveProjectToWorkspace(project)}
+                      type="button"
+                    >
+                      Move…
                     </button>
                   </div>
                 </div>
@@ -389,9 +373,7 @@
               </div>
             </div>
           </div>
-          {#if portInputErrors[project.id]}
-            <p class="project-error">{portInputErrors[project.id]}</p>
-          {:else if projectErrors[project.id]}
+          {#if projectErrors[project.id]}
             <p class="project-error">{projectErrors[project.id]}</p>
           {:else if extractProjectError(status)}
             <p class="project-error">{extractProjectError(status)}</p>

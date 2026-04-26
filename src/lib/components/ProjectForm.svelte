@@ -4,13 +4,17 @@
   import {
     discoverWorkspaceProjects,
     importWorkspaceProjects,
-    suggestNextPort,
     type AddProjectInput,
     type WorkspaceProjectCandidate
   } from "../api/tauri";
 
   export let disabled = false;
-  export let suggestedPort: number | null | undefined = undefined;
+  /** Sprint 10 v0.10.4: workspace name suggested by the manager (e.g. an
+   * existing workspace, so the form pre-fills it for "join existing"). */
+  export let suggestedWorkspaceName: string | null | undefined = undefined;
+  /** Sprint 10 v0.10.4: existing workspace names so the dropdown can offer
+   * "join existing" choices. */
+  export let existingWorkspaceNames: string[] = [];
 
   const dispatch = createEventDispatcher<{
     submit: AddProjectInput;
@@ -19,17 +23,18 @@
 
   let name = "";
   let projectPath = "";
-  let assignedPort = "";
-  let userTouchedPort = false;
+  /** Workspace selection: either a name from the dropdown ("__new__" =
+   * create a new one) or an existing workspace name. */
+  let workspaceSelection = "__new__";
+  /** When workspaceSelection === "__new__", this is the name being typed. */
+  let newWorkspaceName = "";
+  let userTouchedWorkspace = false;
   let lastSuggestedName = "";
   let workspaceFile = "";
   let candidates: WorkspaceProjectCandidate[] = [];
   let selectedPaths: string[] = [];
   let importMessage = "";
   let isImporting = false;
-  // Path that produced the currently-displayed candidate list. Discover button
-  // greys out once the user has discovered the current path; clicking Discover
-  // again at the same path is a no-op so the button shouldn't invite it.
   let lastDiscoveredFile = "";
 
   $: canDiscover =
@@ -41,28 +46,29 @@
   $: canImportSelected =
     !disabled && !isImporting && selectedPaths.length > 0;
 
+  /** The resolved workspace name from the form's current selection. */
+  $: resolvedWorkspaceName =
+    workspaceSelection === "__new__"
+      ? newWorkspaceName.trim() || "workspace-default"
+      : workspaceSelection;
+
   $: canSubmit =
     name.trim().length > 0 &&
     projectPath.trim().length > 0 &&
-    assignedPort.trim().length > 0;
+    resolvedWorkspaceName.length > 0;
 
-  // Auto-fill assignedPort with the latest server-suggested port whenever the
-  // user has not manually edited it. The reactive statement re-fires when
-  // suggestedPort changes (e.g., after a successful add the parent's
-  // suggestedPort shifts to the next free port), keeping the form in sync
-  // and preventing a "port already in use" error on the second submit.
-  $: if (!userTouchedPort && suggestedPort) {
-    assignedPort = String(suggestedPort);
+  // Auto-fill workspace selection from the manager's suggestion until the
+  // user touches the field. If a suggestion exists, prefer "join existing".
+  $: if (!userTouchedWorkspace && suggestedWorkspaceName) {
+    if (existingWorkspaceNames.includes(suggestedWorkspaceName)) {
+      workspaceSelection = suggestedWorkspaceName;
+    } else {
+      newWorkspaceName = suggestedWorkspaceName;
+    }
   }
 
-  onMount(async () => {
-    if (!suggestedPort) {
-      try {
-        assignedPort = String(await suggestNextPort());
-      } catch {
-        // keep empty if suggestion cannot be resolved yet
-      }
-    }
+  onMount(() => {
+    /* no-op: workspace selection has sensible defaults */
   });
 
   function inferNameFromPath(path: string): string {
@@ -148,7 +154,8 @@
     try {
       const result = await importWorkspaceProjects({
         workspaceFile: workspaceFile.trim(),
-        selectedPaths
+        selectedPaths,
+        workspaceName: resolvedWorkspaceName
       });
       importMessage = `Imported ${result.added.length} project(s).`;
       if (result.skipped.length > 0) {
@@ -172,18 +179,14 @@
     dispatch("submit", {
       name,
       projectPath,
-      assignedPort: Number(assignedPort)
+      workspaceName: resolvedWorkspaceName
     });
 
     name = "";
     projectPath = "";
-    // Re-arm the auto-fill: drop the just-submitted port and let the reactive
-    // $: statement above pick up the parent's freshly-shifted suggestedPort
-    // once the dashboard refresh completes. Without this, the form would
-    // submit the second project with the stale port and fail with
-    // "Port X is already in use".
-    userTouchedPort = false;
-    assignedPort = "";
+    // Re-arm auto-suggestion. Keep the workspace selection sticky (the
+    // user is likely adding multiple projects to the same workspace).
+    userTouchedWorkspace = false;
   }
 </script>
 
@@ -215,17 +218,30 @@
     </label>
 
     <label class="field">
-      <span>Assigned port</span>
-      <input
-        bind:value={assignedPort}
+      <span>Workspace</span>
+      <select
+        bind:value={workspaceSelection}
         disabled={disabled}
-        min="1024"
-        step="1"
-        type="number"
-        required
-        on:input={() => (userTouchedPort = true)}
-      />
+        on:change={() => (userTouchedWorkspace = true)}
+      >
+        <option value="__new__">New workspace…</option>
+        {#each existingWorkspaceNames as ws}
+          <option value={ws}>{ws}</option>
+        {/each}
+      </select>
     </label>
+
+    {#if workspaceSelection === "__new__"}
+      <label class="field">
+        <span>New workspace name</span>
+        <input
+          bind:value={newWorkspaceName}
+          disabled={disabled}
+          placeholder="workspace-default"
+          on:input={() => (userTouchedWorkspace = true)}
+        />
+      </label>
+    {/if}
 
     <button class:primary={!disabled && canSubmit} disabled={disabled || !canSubmit} type="submit">Save project</button>
   </section>

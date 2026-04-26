@@ -16,7 +16,9 @@ import {
   startRuntime,
   stopAllRuntimes,
   stopRuntime,
-  updateProjectPort as updateProjectPortApi,
+  setProjectWorkspace as setProjectWorkspaceApi,
+  renameWorkspace as renameWorkspaceApi,
+  deleteWorkspace as deleteWorkspaceApi,
   updateSettings,
   type AddProjectInput,
   type CleanupSummary,
@@ -116,13 +118,35 @@ export function createAppStore() {
     }
   }
 
-  async function updateProjectPortEntry(projectId: string, assignedPort: number) {
+  async function setProjectWorkspaceEntry(projectId: string, workspaceName: string) {
     update((state) => ({ ...state, isBusy: true, error: undefined }));
     try {
-      syncDashboard(await updateProjectPortApi({ projectId, assignedPort }));
+      syncDashboard(await setProjectWorkspaceApi({ projectId, workspaceName }));
       clearProjectError(projectId);
     } catch (error) {
       setProjectError(projectId, error);
+    }
+  }
+
+  async function renameWorkspaceEntry(oldName: string, newName: string) {
+    update((state) => ({ ...state, isBusy: true, error: undefined }));
+    try {
+      syncDashboard(await renameWorkspaceApi({ oldName, newName }));
+    } catch (error) {
+      update((state) => ({ ...state, error: String(error) }));
+    } finally {
+      update((state) => ({ ...state, isBusy: false }));
+    }
+  }
+
+  async function deleteWorkspaceEntry(workspaceName: string) {
+    update((state) => ({ ...state, isBusy: true, error: undefined }));
+    try {
+      syncDashboard(await deleteWorkspaceApi(workspaceName));
+    } catch (error) {
+      update((state) => ({ ...state, error: String(error) }));
+    } finally {
+      update((state) => ({ ...state, isBusy: false }));
     }
   }
 
@@ -514,7 +538,9 @@ export function createAppStore() {
     subscribe,
     load,
     addProjectEntry,
-    updateProjectPortEntry,
+    setProjectWorkspaceEntry,
+    renameWorkspaceEntry,
+    deleteWorkspaceEntry,
     deleteProjectEntry,
     deleteAllProjectEntries,
     updateManagerSettings,

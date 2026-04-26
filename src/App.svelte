@@ -320,7 +320,8 @@
           <div class="dashboard-column">
             <ProjectForm
               disabled={$appStore.isBusy}
-              suggestedPort={$appStore.suggestedPort}
+              suggestedWorkspaceName={$appStore.suggestedWorkspaceName}
+              existingWorkspaceNames={Array.from(new Set(($appStore.projects ?? []).map((p) => p.workspaceName))).sort()}
               on:submit={handleProjectSubmit}
               on:imported={() => appStore.load()}
             />
@@ -346,7 +347,9 @@
               onDelete={(projectId) => appStore.deleteProjectEntry(projectId)}
               onDeleteAll={() => appStore.deleteAllProjectEntries()}
               onDeploy={(mode, targetClients) => appStore.deployToAgents(mode, targetClients)}
-              onUpdatePort={(projectId, assignedPort) => appStore.updateProjectPortEntry(projectId, assignedPort)}
+              onSetWorkspace={(projectId, workspaceName) => appStore.setProjectWorkspaceEntry(projectId, workspaceName)}
+              onRenameWorkspace={(oldName, newName) => appStore.renameWorkspaceEntry(oldName, newName)}
+              onDeleteWorkspace={(name) => appStore.deleteWorkspaceEntry(name)}
               deployTargetDefaults={$appStore.settings?.deployTargets ?? { cursor: true, claude: true, antigravity: true, intellij: true }}
               deployBusy={$appStore.deployBusy ?? false}
               deployError={$appStore.deployError}
@@ -388,8 +391,8 @@
                 <dd title={selectedProject.projectPath}>{selectedProject.projectPath}</dd>
               </div>
               <div>
-                <dt>Assigned port</dt>
-                <dd>{selectedProject.assignedPort}</dd>
+                <dt>Workspace</dt>
+                <dd>{selectedProject.workspaceName}</dd>
               </div>
               <div>
                 <dt>PID</dt>

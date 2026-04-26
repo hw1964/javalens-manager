@@ -47,8 +47,6 @@
   let updatePolicy: UpdatePolicy = "ask";
   let autoCheckForUpdates = true;
   let dataRoot = "";
-  let portRangeStart = 11100;
-  let portRangeEnd = 11199;
   let useSystemTray = true;
   let runtimeKind: "managed" | "localJar" = "managed";
   let localJarPath = "";
@@ -146,8 +144,6 @@
       autoCheckForUpdates: nextSettings.autoCheckForUpdates,
       dataRoot: nextSettings.dataRoot,
       globalRuntimeSource: nextSettings.globalRuntimeSource,
-      portRangeStart: nextSettings.portRangeStart,
-      portRangeEnd: nextSettings.portRangeEnd,
       useSystemTray: nextSettings.useSystemTray,
       mcpClientPaths: nextSettings.mcpClientPaths,
       mcpMergeMode: nextSettings.mcpMergeMode,
@@ -190,8 +186,6 @@
         input.globalRuntimeSource.kind === "managed"
           ? { kind: "managed" }
           : { kind: "localJar", jarPath: (input.globalRuntimeSource as any).jarPath?.trim() ?? "" },
-      portRangeStart: input.portRangeStart,
-      portRangeEnd: input.portRangeEnd,
       useSystemTray: input.useSystemTray,
       mcpClientPaths: normalizeMcpClientPaths(input.mcpClientPaths),
       mcpMergeMode: input.mcpMergeMode,
@@ -215,8 +209,6 @@
       updatePolicy,
       autoCheckForUpdates,
       dataRoot,
-      portRangeStart,
-      portRangeEnd,
       useSystemTray,
       globalRuntimeSource:
         runtimeKind === "managed"
@@ -282,8 +274,6 @@
     updatePolicy = nextSettings.updatePolicy;
     autoCheckForUpdates = nextSettings.autoCheckForUpdates;
     dataRoot = nextSettings.dataRoot;
-    portRangeStart = nextSettings.portRangeStart;
-    portRangeEnd = nextSettings.portRangeEnd;
     useSystemTray = nextSettings.useSystemTray;
     runtimeKind = nextSettings.globalRuntimeSource.kind;
     mcpMergeMode = nextSettings.mcpMergeMode;
@@ -697,18 +687,6 @@
           <label class="checkbox-row compact">
             <input bind:checked={useSystemTray} disabled={interactionDisabled} on:change={handleBoundEdit} type="checkbox" />
             <span>Use system tray</span>
-          </label>
-        </section>
-
-        <section class="machine-control-card compact-card stack">
-          <h4>Port Range</h4>
-          <label class="field">
-            <span>Permitted project ports</span>
-            <div class="field-row port-range-row">
-              <input bind:value={portRangeStart} disabled={interactionDisabled} min="1024" on:input={handleBoundEdit} step="1" type="number" />
-              <input bind:value={portRangeEnd} disabled={interactionDisabled} min="1024" on:input={handleBoundEdit} step="1" type="number" />
-            </div>
-            <p class="hint">Manager assigns one port per project and checks conflicts.</p>
           </label>
         </section>
 
