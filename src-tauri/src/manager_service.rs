@@ -846,46 +846,14 @@ impl ManagerService {
     ) -> Result<(), String> {
         let settings = self.config_store.get_settings();
         let projects = self.config_store.list_projects();
-        let members: Vec<&ProjectRecord> = projects
+        let paths: Vec<&str> = projects
             .iter()
             .filter(|p| p.workspace_name == workspace_name && p.id != excluded_project_id)
+            .map(|p| p.project_path.as_str())
             .collect();
 
         let workspace_dir = settings.workspace_root().join(workspace_name);
-        let workspace_json = workspace_dir.join("workspace.json");
-
-        if members.is_empty() {
-            let _ = std::fs::remove_file(&workspace_json);
-            return Ok(());
-        }
-
-        std::fs::create_dir_all(&workspace_dir).map_err(|e| {
-            format!(
-                "failed to create workspace dir {}: {e}",
-                workspace_dir.display()
-            )
-        })?;
-
-        let payload = serde_json::json!({
-            "version": 1,
-            "name": workspace_name,
-            "projects": members.iter().map(|p| &p.project_path).collect::<Vec<_>>(),
-        });
-        let json = serde_json::to_string_pretty(&payload).map_err(|e| {
-            format!("failed to serialize workspace.json for {workspace_name}: {e}")
-        })?;
-
-        let tmp = workspace_json.with_extension("json.tmp");
-        std::fs::write(&tmp, format!("{json}\n"))
-            .map_err(|e| format!("failed to write {}: {e}", tmp.display()))?;
-        std::fs::rename(&tmp, &workspace_json).map_err(|e| {
-            format!(
-                "failed to rename {} to {}: {e}",
-                tmp.display(),
-                workspace_json.display()
-            )
-        })?;
-        Ok(())
+        write_workspace_json_to_dir(&workspace_dir, workspace_name, &paths)
     }
 
     /// Retrieves the current runtime status for a specific project.
@@ -982,9 +950,9 @@ impl ManagerService {
     }
 
     /// Sprint 10 v0.10.4: write the canonical `workspace.json` for the
-    /// named workspace. Atomic (temp + rename). Lists every project path
-    /// currently registered to that workspace. If no projects remain, the
-    /// file is removed so the next javalens spawn starts cleanly.
+    /// named workspace. Lists every project path currently registered to
+    /// that workspace. Delegates to `write_workspace_json_to_dir` for the
+    /// atomic file I/O.
     ///
     /// Called after every projects.json mutation that affects a workspace's
     /// member list. Running javalens processes pick up the change via
@@ -992,50 +960,14 @@ impl ManagerService {
     fn write_workspace_json_for(&self, workspace_name: &str) -> Result<(), String> {
         let settings = self.config_store.get_settings();
         let projects = self.config_store.list_projects();
-        let members: Vec<&ProjectRecord> = projects
+        let paths: Vec<&str> = projects
             .iter()
             .filter(|p| p.workspace_name == workspace_name)
+            .map(|p| p.project_path.as_str())
             .collect();
 
         let workspace_dir = settings.workspace_root().join(workspace_name);
-        let workspace_json = workspace_dir.join("workspace.json");
-
-        if members.is_empty() {
-            // No members → drop the file (ignore error if absent).
-            let _ = std::fs::remove_file(&workspace_json);
-            return Ok(());
-        }
-
-        // Ensure the dir exists.
-        std::fs::create_dir_all(&workspace_dir).map_err(|e| {
-            format!(
-                "failed to create workspace dir {}: {e}",
-                workspace_dir.display()
-            )
-        })?;
-
-        let payload = serde_json::json!({
-            "version": 1,
-            "name": workspace_name,
-            "projects": members.iter().map(|p| &p.project_path).collect::<Vec<_>>(),
-        });
-        let json = serde_json::to_string_pretty(&payload).map_err(|e| {
-            format!("failed to serialize workspace.json for {workspace_name}: {e}")
-        })?;
-
-        // Atomic write: temp + rename.
-        let tmp = workspace_json.with_extension("json.tmp");
-        std::fs::write(&tmp, format!("{json}\n")).map_err(|e| {
-            format!("failed to write {}: {e}", tmp.display())
-        })?;
-        std::fs::rename(&tmp, &workspace_json).map_err(|e| {
-            format!(
-                "failed to rename {} to {}: {e}",
-                tmp.display(),
-                workspace_json.display()
-            )
-        })?;
-        Ok(())
+        write_workspace_json_to_dir(&workspace_dir, workspace_name, &paths)
     }
 
     fn unresolved_runtime_status(
@@ -2571,6 +2503,57 @@ fn latest_backup_path(_path: &str) -> Option<String> {
     None
 }
 
+/// Sprint 10 v0.10.4: atomic write of `workspace.json` for one workspace.
+/// Lifted out of `ManagerService` so it can be unit-tested without the
+/// full ConfigStore + ReleaseManager + RuntimeManager dependency graph.
+///
+/// Behavior:
+/// - `paths.is_empty()` → the file is removed if present (no member =
+///   no workspace.json on disk).
+/// - Otherwise: writes to a `.tmp` sibling and renames atomically so the
+///   `WorkspaceFileWatcher` in javalens never observes a half-written
+///   file. Creates the workspace dir if missing.
+pub(crate) fn write_workspace_json_to_dir(
+    workspace_dir: &Path,
+    workspace_name: &str,
+    paths: &[&str],
+) -> Result<(), String> {
+    let workspace_json = workspace_dir.join("workspace.json");
+
+    if paths.is_empty() {
+        let _ = std::fs::remove_file(&workspace_json);
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(workspace_dir).map_err(|e| {
+        format!(
+            "failed to create workspace dir {}: {e}",
+            workspace_dir.display()
+        )
+    })?;
+
+    let payload = serde_json::json!({
+        "version": 1,
+        "name": workspace_name,
+        "projects": paths,
+    });
+    let json = serde_json::to_string_pretty(&payload).map_err(|e| {
+        format!("failed to serialize workspace.json for {workspace_name}: {e}")
+    })?;
+
+    let tmp = workspace_json.with_extension("json.tmp");
+    std::fs::write(&tmp, format!("{json}\n"))
+        .map_err(|e| format!("failed to write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, &workspace_json).map_err(|e| {
+        format!(
+            "failed to rename {} to {}: {e}",
+            tmp.display(),
+            workspace_json.display()
+        )
+    })?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2671,5 +2654,136 @@ mod tests {
         let a = mcp_server_id_for_workspace("jats");
         let b = mcp_server_id_for_workspace("orb");
         assert_ne!(a, b);
+    }
+
+    // ============================================================
+    // write_workspace_json_to_dir integration tests (Sprint 10 B.7
+    // follow-up).
+    // ============================================================
+
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// Returns a unique tempdir per call so concurrent tests don't
+    /// collide. Caller is responsible for cleanup (best-effort).
+    fn unique_tempdir(label: &str) -> PathBuf {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!(
+            "javalens-manager-mstest-{label}-{}-{}-{}",
+            std::process::id(),
+            nanos,
+            n
+        ));
+        std::fs::create_dir_all(&dir).expect("failed to create test tempdir");
+        dir
+    }
+
+    #[test]
+    fn write_workspace_json_writes_atomic_and_correct_shape() {
+        let dir = unique_tempdir("ws-json-write");
+        let workspace_dir = dir.join("ws");
+        let paths = ["/projects/a", "/projects/b"];
+
+        write_workspace_json_to_dir(&workspace_dir, "test-ws", &paths)
+            .expect("should write workspace.json");
+
+        // File exists and has the expected shape.
+        let workspace_json = workspace_dir.join("workspace.json");
+        assert!(workspace_json.is_file(), "workspace.json must exist");
+        let contents = std::fs::read_to_string(&workspace_json).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
+        assert_eq!(parsed["version"], 1);
+        assert_eq!(parsed["name"], "test-ws");
+        assert_eq!(
+            parsed["projects"].as_array().unwrap().len(),
+            2,
+            "both project paths present"
+        );
+        assert_eq!(parsed["projects"][0], "/projects/a");
+        assert_eq!(parsed["projects"][1], "/projects/b");
+
+        // No leftover .tmp file from the atomic-rename machinery.
+        let tmp = workspace_dir.join("workspace.json.tmp");
+        assert!(!tmp.exists(), ".tmp must be renamed away");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_workspace_json_with_empty_paths_removes_file() {
+        let dir = unique_tempdir("ws-json-empty");
+        let workspace_dir = dir.join("ws");
+
+        // Pre-populate with a stale workspace.json from a prior run.
+        std::fs::create_dir_all(&workspace_dir).unwrap();
+        let workspace_json = workspace_dir.join("workspace.json");
+        std::fs::write(&workspace_json, "{ \"projects\": [\"/old\"] }").unwrap();
+        assert!(workspace_json.exists());
+
+        // Empty paths → file is removed.
+        write_workspace_json_to_dir(&workspace_dir, "test-ws", &[]).expect("ok");
+        assert!(!workspace_json.exists(), "empty members must remove the file");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_workspace_json_creates_workspace_dir_if_missing() {
+        let dir = unique_tempdir("ws-json-mkdir");
+        // workspace_dir does NOT exist yet — function must create it.
+        let workspace_dir = dir.join("nested").join("ws");
+        assert!(!workspace_dir.exists());
+
+        write_workspace_json_to_dir(&workspace_dir, "ws", &["/p/a"])
+            .expect("should create dir + write file");
+        assert!(workspace_dir.is_dir());
+        assert!(workspace_dir.join("workspace.json").is_file());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_workspace_json_overwrites_previous_contents() {
+        let dir = unique_tempdir("ws-json-overwrite");
+        let workspace_dir = dir.join("ws");
+
+        // First write: 2 paths.
+        write_workspace_json_to_dir(&workspace_dir, "ws", &["/p/a", "/p/b"]).unwrap();
+        let first: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(workspace_dir.join("workspace.json")).unwrap()).unwrap();
+        assert_eq!(first["projects"].as_array().unwrap().len(), 2);
+
+        // Second write: 1 path. File now reflects the new state.
+        write_workspace_json_to_dir(&workspace_dir, "ws", &["/p/c"]).unwrap();
+        let second: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(workspace_dir.join("workspace.json")).unwrap()).unwrap();
+        assert_eq!(second["projects"].as_array().unwrap().len(), 1);
+        assert_eq!(second["projects"][0], "/p/c");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_workspace_json_no_op_when_dir_missing_and_paths_empty() {
+        let dir = unique_tempdir("ws-json-noop");
+        // workspace_dir does NOT exist; paths empty → no error, no
+        // dir created. (Caller's contract: empty paths means "this
+        // workspace has no members anymore"; if there's nothing on
+        // disk, that's already the desired state.)
+        let workspace_dir = dir.join("ws");
+        assert!(!workspace_dir.exists());
+        write_workspace_json_to_dir(&workspace_dir, "ws", &[])
+            .expect("empty + missing dir is a clean no-op");
+        // The function tries fs::remove_file on a missing path which is
+        // ignored. No assertion on dir existence — implementation is
+        // free to leave it absent.
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

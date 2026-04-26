@@ -141,8 +141,20 @@ impl RuntimeManager {
         &self,
         launch_request: &RuntimeLaunchRequest,
     ) -> Result<RuntimeStatusRecord, String> {
-        let reference = &launch_request.reference;
+        let spec = self.command_spec_for(launch_request);
+        self.start_runtime_with_spec(&launch_request.reference, spec)
+    }
 
+    /// Internal entry point that takes the already-built `CommandSpec`.
+    /// Public-in-crate so unit tests can spawn a tiny stand-in command
+    /// (e.g. `sleep`) instead of `java -jar javalens.jar` to verify the
+    /// workspace-grouped membership lifecycle without depending on a real
+    /// javalens runtime.
+    pub(crate) fn start_runtime_with_spec(
+        &self,
+        reference: &RuntimeReference,
+        spec: CommandSpec,
+    ) -> Result<RuntimeStatusRecord, String> {
         // Fast path: workspace already running. Add membership, return
         // workspace's PID as this project's status.
         if let Some(status) = self.try_join_running_workspace(reference)? {
@@ -157,8 +169,7 @@ impl RuntimeManager {
             )
         })?;
 
-        let command_spec = self.command_spec_for(launch_request);
-        let log_path = command_spec.log_path.clone();
+        let log_path = spec.log_path.clone();
         let log_file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -168,13 +179,13 @@ impl RuntimeManager {
             .try_clone()
             .map_err(|error| format!("failed to clone log file handle: {error}"))?;
 
-        let mut command = Command::new(&command_spec.command);
-        command.args(&command_spec.args);
+        let mut command = Command::new(&spec.command);
+        command.args(&spec.args);
         command.stdin(Stdio::piped());
         command.stdout(Stdio::from(log_file));
         command.stderr(Stdio::from(stderr_file));
 
-        for (key, value) in &command_spec.env {
+        for (key, value) in &spec.env {
             command.env(key, value);
         }
 
@@ -216,6 +227,25 @@ impl RuntimeManager {
         self.persist_snapshot(status.clone())?;
 
         Ok(status)
+    }
+
+    /// Test helper: returns the membership snapshot for a workspace, or
+    /// None if no process is registered for that workspace. Used by unit
+    /// tests to assert join/leave semantics without poking at private
+    /// state. `pub(crate)` to keep it out of the public API.
+    #[cfg(test)]
+    pub(crate) fn workspace_members(&self, workspace_name: &str) -> Option<Vec<String>> {
+        let handles = self.handles.lock().expect("runtime mutex poisoned");
+        handles
+            .get(workspace_name)
+            .map(|h| h.members.iter().cloned().collect())
+    }
+
+    /// Test helper: returns the PID of the workspace's process, or None.
+    #[cfg(test)]
+    pub(crate) fn workspace_pid(&self, workspace_name: &str) -> Option<u32> {
+        let handles = self.handles.lock().expect("runtime mutex poisoned");
+        handles.get(workspace_name).map(|h| h.child.id())
     }
 
     /// Project leaves the workspace. If the workspace's process has no
@@ -626,5 +656,259 @@ mod tests {
         assert_eq!(status.workspace_name, "test-ws");
         assert_eq!(status.runtime_label, "Managed JavaLens 1.4.0");
         assert_eq!(status.detail, "Missing runtime");
+    }
+
+    // ============================================================
+    // Sprint 10 v0.10.4: workspace-grouped spawn lifecycle tests.
+    //
+    // These spawn real processes (a tiny `sleep` command stand-in for
+    // javalens) so the membership / kill / join lifecycle is exercised
+    // end-to-end without depending on a real javalens runtime.
+    // Skipped on non-Unix platforms because `sleep` isn't on Windows.
+    // ============================================================
+
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_tempdir(label: &str) -> PathBuf {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!(
+            "javalens-manager-rmtest-{label}-{}-{}-{}",
+            std::process::id(),
+            nanos,
+            n
+        ));
+        std::fs::create_dir_all(&dir).expect("failed to create test tempdir");
+        std::fs::create_dir_all(dir.join("logs")).unwrap();
+        std::fs::create_dir_all(dir.join("ws")).unwrap();
+        dir
+    }
+
+    fn paths_in(dir: &std::path::Path) -> AppPaths {
+        AppPaths {
+            config_dir: dir.to_path_buf(),
+            state_dir: dir.to_path_buf(),
+            cache_dir: dir.to_path_buf(),
+            projects_file: dir.join("projects.json"),
+            settings_file: dir.join("settings.json"),
+            runtime_state_file: dir.join("runtime-state.json"),
+            default_data_root: dir.to_path_buf(),
+            log_dir: dir.join("logs"),
+        }
+    }
+
+    /// Build a CommandSpec that runs `sleep 60` — long enough to outlast
+    /// the test's lifecycle assertions but quick to clean up via kill.
+    fn sleep_spec(workspace_dir: &str, log_path: String) -> CommandSpec {
+        CommandSpec {
+            command: "sleep".into(),
+            args: vec!["60".into()],
+            env: vec![],
+            log_path,
+        }
+    }
+
+    fn make_reference(project_id: &str, workspace_name: &str, workspace_dir: &str) -> RuntimeReference {
+        RuntimeReference {
+            project_id: project_id.into(),
+            workspace_name: workspace_name.into(),
+            workspace_dir: workspace_dir.into(),
+            runtime_label: "test-runtime".into(),
+            resolved_jar_path: "/dev/null".into(),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_grouped_spawn_two_projects_share_one_process() {
+        // Two projects sharing a workspace_name → start_runtime spawns
+        // ONCE for the first project and the second project JOINS the
+        // same process (no second spawn). Both members are tracked.
+        let dir = unique_tempdir("two-share");
+        let paths = paths_in(&dir);
+        let manager = RuntimeManager::new(paths);
+
+        let ws_dir = dir.join("ws").join("test").to_string_lossy().to_string();
+        let ref_a = make_reference("p-a", "test", &ws_dir);
+        let ref_b = make_reference("p-b", "test", &ws_dir);
+
+        let log_a = dir.join("logs").join("test.log").to_string_lossy().to_string();
+        let status_a = manager
+            .start_runtime_with_spec(&ref_a, sleep_spec(&ws_dir, log_a.clone()))
+            .expect("first spawn must succeed");
+        let pid_a = status_a.pid.expect("first spawn produces a PID");
+
+        let status_b = manager
+            .start_runtime_with_spec(&ref_b, sleep_spec(&ws_dir, log_a.clone()))
+            .expect("second start must JOIN the running workspace");
+        let pid_b = status_b.pid.expect("joining returns a PID too");
+
+        // Same process for both projects — no second spawn.
+        assert_eq!(pid_a, pid_b, "joining must reuse the running PID");
+
+        let members = manager.workspace_members("test").unwrap();
+        assert_eq!(members.len(), 2, "both projects in members set");
+        assert!(members.contains(&"p-a".to_string()));
+        assert!(members.contains(&"p-b".to_string()));
+
+        // Cleanup.
+        manager.stop_workspace_runtime("test").unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_stop_runtime_keeps_process_alive_for_remaining_members() {
+        // Two members → stop one → workspace process keeps running for
+        // the other; only the leaving project's snapshot is "stopped".
+        let dir = unique_tempdir("keeps-alive");
+        let paths = paths_in(&dir);
+        let manager = RuntimeManager::new(paths);
+
+        let ws_dir = dir.join("ws").join("test").to_string_lossy().to_string();
+        let ref_a = make_reference("p-a", "test", &ws_dir);
+        let ref_b = make_reference("p-b", "test", &ws_dir);
+        let log = dir.join("logs").join("test.log").to_string_lossy().to_string();
+
+        manager.start_runtime_with_spec(&ref_a, sleep_spec(&ws_dir, log.clone())).unwrap();
+        manager.start_runtime_with_spec(&ref_b, sleep_spec(&ws_dir, log.clone())).unwrap();
+        let pid_before = manager.workspace_pid("test").unwrap();
+
+        // p-a leaves. Workspace must still be alive for p-b.
+        manager.stop_runtime(&ref_a).unwrap();
+        let members_after = manager.workspace_members("test").unwrap();
+        assert_eq!(members_after, vec!["p-b".to_string()]);
+        let pid_after = manager.workspace_pid("test").unwrap();
+        assert_eq!(pid_before, pid_after, "process must NOT have been killed");
+
+        // Cleanup.
+        manager.stop_workspace_runtime("test").unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_stop_runtime_kills_process_when_last_member_leaves() {
+        // Single member → stop_runtime → kills the process and removes
+        // the handle (workspace_pid returns None).
+        let dir = unique_tempdir("kill-last");
+        let paths = paths_in(&dir);
+        let manager = RuntimeManager::new(paths);
+
+        let ws_dir = dir.join("ws").join("test").to_string_lossy().to_string();
+        let ref_only = make_reference("p-only", "test", &ws_dir);
+        let log = dir.join("logs").join("test.log").to_string_lossy().to_string();
+
+        manager.start_runtime_with_spec(&ref_only, sleep_spec(&ws_dir, log)).unwrap();
+        assert!(manager.workspace_pid("test").is_some());
+
+        // Last member leaves → process killed.
+        manager.stop_runtime(&ref_only).unwrap();
+        assert!(
+            manager.workspace_pid("test").is_none(),
+            "workspace handle removed when last member leaves"
+        );
+        assert!(
+            manager.workspace_members("test").is_none(),
+            "no members map for a dead workspace"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_stop_workspace_runtime_kills_unconditionally() {
+        // stop_workspace_runtime is the "Stop workspace" button — it
+        // kills regardless of how many members are still attached.
+        let dir = unique_tempdir("force-stop-ws");
+        let paths = paths_in(&dir);
+        let manager = RuntimeManager::new(paths);
+
+        let ws_dir = dir.join("ws").join("test").to_string_lossy().to_string();
+        let ref_a = make_reference("p-a", "test", &ws_dir);
+        let ref_b = make_reference("p-b", "test", &ws_dir);
+        let log = dir.join("logs").join("test.log").to_string_lossy().to_string();
+
+        manager.start_runtime_with_spec(&ref_a, sleep_spec(&ws_dir, log.clone())).unwrap();
+        manager.start_runtime_with_spec(&ref_b, sleep_spec(&ws_dir, log)).unwrap();
+        assert_eq!(manager.workspace_members("test").unwrap().len(), 2);
+
+        manager.stop_workspace_runtime("test").unwrap();
+        assert!(
+            manager.workspace_pid("test").is_none(),
+            "workspace handle removed by force-stop"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_remove_project_runtime_decrements_membership() {
+        // remove_project_runtime is called by manager_service.delete_project.
+        // It scans handles for the project and removes its membership
+        // (killing the process iff this was the last member).
+        let dir = unique_tempdir("remove-project");
+        let paths = paths_in(&dir);
+        let manager = RuntimeManager::new(paths);
+
+        let ws_dir = dir.join("ws").join("test").to_string_lossy().to_string();
+        let ref_a = make_reference("p-a", "test", &ws_dir);
+        let ref_b = make_reference("p-b", "test", &ws_dir);
+        let log = dir.join("logs").join("test.log").to_string_lossy().to_string();
+
+        manager.start_runtime_with_spec(&ref_a, sleep_spec(&ws_dir, log.clone())).unwrap();
+        manager.start_runtime_with_spec(&ref_b, sleep_spec(&ws_dir, log)).unwrap();
+
+        manager.remove_project_runtime("p-a").unwrap();
+        // p-a gone, p-b still a member, process still alive.
+        let members = manager.workspace_members("test").unwrap();
+        assert_eq!(members, vec!["p-b".to_string()]);
+        assert!(manager.workspace_pid("test").is_some());
+
+        // Now remove the last member → process dies.
+        manager.remove_project_runtime("p-b").unwrap();
+        assert!(manager.workspace_pid("test").is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_two_distinct_workspaces_have_independent_processes() {
+        // Two workspace_names → two processes. Stopping one does NOT
+        // affect the other.
+        let dir = unique_tempdir("two-ws-independent");
+        let paths = paths_in(&dir);
+        let manager = RuntimeManager::new(paths);
+
+        let ws_a_dir = dir.join("ws").join("a").to_string_lossy().to_string();
+        let ws_b_dir = dir.join("ws").join("b").to_string_lossy().to_string();
+        let ref_a = make_reference("p-a", "ws-a", &ws_a_dir);
+        let ref_b = make_reference("p-b", "ws-b", &ws_b_dir);
+        let log_a = dir.join("logs").join("a.log").to_string_lossy().to_string();
+        let log_b = dir.join("logs").join("b.log").to_string_lossy().to_string();
+
+        manager.start_runtime_with_spec(&ref_a, sleep_spec(&ws_a_dir, log_a)).unwrap();
+        manager.start_runtime_with_spec(&ref_b, sleep_spec(&ws_b_dir, log_b)).unwrap();
+
+        let pid_a = manager.workspace_pid("ws-a").unwrap();
+        let pid_b = manager.workspace_pid("ws-b").unwrap();
+        assert_ne!(pid_a, pid_b, "distinct workspaces → distinct processes");
+
+        // Stop ws-a only.
+        manager.stop_workspace_runtime("ws-a").unwrap();
+        assert!(manager.workspace_pid("ws-a").is_none());
+        assert_eq!(manager.workspace_pid("ws-b"), Some(pid_b), "ws-b unaffected");
+
+        // Cleanup.
+        manager.stop_workspace_runtime("ws-b").unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
