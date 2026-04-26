@@ -189,14 +189,17 @@ struct ProbeRuntime {
     runtime_label: String,
 }
 
+/// One deployed MCP server entry per workspace (Sprint 10 v0.10.4).
+/// Multiple projects sharing a `workspace_name` collapse into one
+/// ManagedDeployServer; the listed `project_paths` are the workspace's
+/// members for display / mcp-rule generation.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ManagedDeployServer {
     id: String,
-    project_id: String,
-    project_name: String,
-    project_path: String,
-    assigned_port: u16,
+    workspace_name: String,
+    project_names: Vec<String>,
+    project_paths: Vec<String>,
     command: String,
     args: Vec<String>,
     env: HashMap<String, String>,
@@ -247,19 +250,41 @@ impl ManagerService {
 
     /// Adds a new project to the manager. The project's workspace is
     /// determined by `input.workspace_name`; empty input defaults to
-    /// `"workspace-default"`.
+    /// `"workspace-default"`. After persisting, rewrites the workspace's
+    /// `workspace.json` so any running javalens for that workspace picks
+    /// up the new project via the file watcher.
     pub fn add_project(&self, input: AddProjectInput) -> Result<ProjectRecord, String> {
-        self.config_store.add_project(input)
+        let project = self.config_store.add_project(input)?;
+        self.write_workspace_json_for(&project.workspace_name)?;
+        Ok(project)
     }
 
     /// Sprint 10 v0.10.4: move a project to a different workspace.
-    /// Replaces the legacy `update_project_port`.
+    /// Rewrites both the source and destination `workspace.json` files so
+    /// running javalens processes drop / pick up the project via the
+    /// file watcher.
     pub fn set_project_workspace(
         &self,
         input: SetProjectWorkspaceInput,
     ) -> Result<ManagerDashboard, String> {
+        // Capture the old workspace name BEFORE mutating, so we can
+        // rewrite both files post-update.
+        let projects_before = self.config_store.list_projects();
+        let source_workspace = projects_before
+            .iter()
+            .find(|p| p.id == input.project_id)
+            .map(|p| p.workspace_name.clone());
+
         self.config_store
-            .set_project_workspace(&input.project_id, input.workspace_name)?;
+            .set_project_workspace(&input.project_id, input.workspace_name.clone())?;
+
+        if let Some(src) = source_workspace.as_ref() {
+            // Skip the rewrite if the destination is the same as the source.
+            if src != &input.workspace_name {
+                self.write_workspace_json_for(src)?;
+            }
+        }
+        self.write_workspace_json_for(&input.workspace_name)?;
         self.load_dashboard()
     }
 
@@ -272,21 +297,53 @@ impl ManagerService {
         input: RenameWorkspaceInput,
     ) -> Result<ManagerDashboard, String> {
         self.config_store
-            .rename_workspace(&input.old_name, input.new_name)?;
+            .rename_workspace(&input.old_name, input.new_name.clone())?;
+        // Rewrite workspace.json under the new name. The old workspace's
+        // JDT data dir + workspace.json are left in place for the user to
+        // clean up via delete_workspace if they were running there.
+        self.write_workspace_json_for(&input.new_name)?;
         self.load_dashboard()
     }
 
-    /// Deletes a project by its ID.
+    /// Deletes a project by its ID. After removal, rewrites the workspace's
+    /// `workspace.json` so the running javalens drops the project via the
+    /// file watcher (no respawn needed when other members remain).
     pub fn delete_project(&self, project_id: &str) -> Result<ManagerDashboard, String> {
+        // Capture the workspace before deletion.
+        let projects_before = self.config_store.list_projects();
+        let host_workspace = projects_before
+            .iter()
+            .find(|p| p.id == project_id)
+            .map(|p| p.workspace_name.clone());
+
         self.runtime_manager.remove_project_runtime(project_id)?;
         self.config_store.delete_project(project_id)?;
+        if let Some(ws) = host_workspace {
+            // Rewrite (or remove) the workspace.json based on whether
+            // any members remain.
+            self.write_workspace_json_for(&ws)?;
+        }
         self.load_dashboard()
     }
 
     /// Starts runtimes for all configured projects.
+    /// Sprint 10 v0.10.4: writes `workspace.json` once per workspace
+    /// before spawning any javalens process. Multiple projects sharing
+    /// a `workspace_name` collapse into one spawn per workspace; the
+    /// remaining projects "join" the running process via runtime_manager.
     pub fn start_all_runtimes(&self) -> Result<ManagerDashboard, String> {
         let projects = self.config_store.list_projects();
         let mut errors = Vec::new();
+
+        // Write workspace.json files first — once per distinct workspace.
+        let mut workspaces_written: HashSet<String> = HashSet::new();
+        for project in &projects {
+            if workspaces_written.insert(project.workspace_name.clone()) {
+                if let Err(e) = self.write_workspace_json_for(&project.workspace_name) {
+                    errors.push(format!("{}: {e}", project.workspace_name));
+                }
+            }
+        }
 
         for project in projects {
             match self.resolve_launch_request(&project) {
@@ -696,25 +753,111 @@ impl ManagerService {
         Ok(WorkspaceImportResult { added, skipped })
     }
 
-    /// Starts the runtime for a specific project.
+    /// Starts the runtime for a specific project. Writes workspace.json
+    /// for the project's workspace before spawning so the spawning
+    /// javalens picks up the full workspace member list.
     pub fn start_runtime(&self, project_id: &str) -> Result<RuntimeStatusRecord, String> {
         let project = self
             .config_store
             .get_project(project_id)
             .ok_or_else(|| format!("Unknown project id: {project_id}"))?;
 
+        // Sprint 10 v0.10.4: write workspace.json before spawn (or before
+        // joining a running workspace — the file watcher then picks up the
+        // change on the running process).
+        self.write_workspace_json_for(&project.workspace_name)?;
+
         let launch_request = self.resolve_launch_request(&project)?;
         self.runtime_manager.start_runtime(&launch_request)
     }
 
-    /// Stops the runtime for a specific project.
+    /// Stops the runtime for a specific project. Sprint 10 v0.10.4:
+    /// "stop" means the project leaves its workspace — the workspace
+    /// process keeps running for any remaining members; only kills the
+    /// process when this was the last member. Workspace.json is rewritten
+    /// without the leaving project so the file watcher drops it.
     pub fn stop_runtime(&self, project_id: &str) -> Result<RuntimeStatusRecord, String> {
         let project = self
             .config_store
             .get_project(project_id)
             .ok_or_else(|| format!("Unknown project id: {project_id}"))?;
         let reference = self.resolve_runtime_reference(&project)?;
+
+        // Tell javalens to drop this project: rewrite workspace.json
+        // without it (the file watcher in javalens will call removeProject
+        // within ~1 s).
+        let projects = self.config_store.list_projects();
+        let remaining: Vec<&ProjectRecord> = projects
+            .iter()
+            .filter(|p| p.workspace_name == project.workspace_name && p.id != project_id)
+            .collect();
+        if remaining.is_empty() {
+            // No remaining members — the runtime_manager.stop_runtime will
+            // also kill the process, but write_workspace_json_for is the
+            // canonical source of truth so it's still useful to call (it
+            // removes the file).
+            self.write_workspace_json_for(&project.workspace_name)?;
+        } else {
+            // Members remain: write workspace.json with just the remaining.
+            // This is a slight cheat — write_workspace_json_for reads from
+            // config_store which still includes this project. We need a
+            // version that takes an explicit member list. Inline the write:
+            self.write_workspace_json_excluding(&project.workspace_name, project_id)?;
+        }
+
         self.runtime_manager.stop_runtime(&reference)
+    }
+
+    /// Sprint 10 v0.10.4: write workspace.json for a workspace, excluding
+    /// one project (used by stop_runtime where the project still lives in
+    /// projects.json but should not be in the workspace's running file).
+    fn write_workspace_json_excluding(
+        &self,
+        workspace_name: &str,
+        excluded_project_id: &str,
+    ) -> Result<(), String> {
+        let settings = self.config_store.get_settings();
+        let projects = self.config_store.list_projects();
+        let members: Vec<&ProjectRecord> = projects
+            .iter()
+            .filter(|p| p.workspace_name == workspace_name && p.id != excluded_project_id)
+            .collect();
+
+        let workspace_dir = settings.workspace_root().join(workspace_name);
+        let workspace_json = workspace_dir.join("workspace.json");
+
+        if members.is_empty() {
+            let _ = std::fs::remove_file(&workspace_json);
+            return Ok(());
+        }
+
+        std::fs::create_dir_all(&workspace_dir).map_err(|e| {
+            format!(
+                "failed to create workspace dir {}: {e}",
+                workspace_dir.display()
+            )
+        })?;
+
+        let payload = serde_json::json!({
+            "version": 1,
+            "name": workspace_name,
+            "projects": members.iter().map(|p| &p.project_path).collect::<Vec<_>>(),
+        });
+        let json = serde_json::to_string_pretty(&payload).map_err(|e| {
+            format!("failed to serialize workspace.json for {workspace_name}: {e}")
+        })?;
+
+        let tmp = workspace_json.with_extension("json.tmp");
+        std::fs::write(&tmp, format!("{json}\n"))
+            .map_err(|e| format!("failed to write {}: {e}", tmp.display()))?;
+        std::fs::rename(&tmp, &workspace_json).map_err(|e| {
+            format!(
+                "failed to rename {} to {}: {e}",
+                tmp.display(),
+                workspace_json.display()
+            )
+        })?;
+        Ok(())
     }
 
     /// Retrieves the current runtime status for a specific project.
@@ -781,8 +924,12 @@ impl ManagerService {
         settings: &ManagerSettings,
         installed_runtime: Option<&ManagedRuntimeRecord>,
     ) -> Result<RuntimeReference, String> {
-        let workspace_dir =
-            crate::config::display_path(&settings.workspace_root().join(&project.id));
+        // Sprint 10 v0.10.4: workspace_dir is keyed by workspace_name, not
+        // project id — so all projects sharing a workspace share one
+        // Eclipse JDT data dir + one javalens process.
+        let workspace_dir = crate::config::display_path(
+            &settings.workspace_root().join(&project.workspace_name),
+        );
         match &settings.global_runtime_source {
             RuntimeSource::Managed => {
                 let runtime = installed_runtime
@@ -790,7 +937,7 @@ impl ManagerService {
 
                 Ok(RuntimeReference {
                     project_id: project.id.clone(),
-                    assigned_port: project.assigned_port,
+                    workspace_name: project.workspace_name.clone(),
                     workspace_dir,
                     runtime_label: format!("Managed JavaLens {}", runtime.version),
                     resolved_jar_path: runtime.jar_path.clone(),
@@ -798,12 +945,69 @@ impl ManagerService {
             }
             RuntimeSource::LocalJar { jar_path } => Ok(RuntimeReference {
                 project_id: project.id.clone(),
-                assigned_port: project.assigned_port,
+                workspace_name: project.workspace_name.clone(),
                 workspace_dir,
                 runtime_label: "Local JavaLens JAR".into(),
                 resolved_jar_path: jar_path.clone(),
             }),
         }
+    }
+
+    /// Sprint 10 v0.10.4: write the canonical `workspace.json` for the
+    /// named workspace. Atomic (temp + rename). Lists every project path
+    /// currently registered to that workspace. If no projects remain, the
+    /// file is removed so the next javalens spawn starts cleanly.
+    ///
+    /// Called after every projects.json mutation that affects a workspace's
+    /// member list. Running javalens processes pick up the change via
+    /// `WorkspaceFileWatcher` (~1 s latency).
+    fn write_workspace_json_for(&self, workspace_name: &str) -> Result<(), String> {
+        let settings = self.config_store.get_settings();
+        let projects = self.config_store.list_projects();
+        let members: Vec<&ProjectRecord> = projects
+            .iter()
+            .filter(|p| p.workspace_name == workspace_name)
+            .collect();
+
+        let workspace_dir = settings.workspace_root().join(workspace_name);
+        let workspace_json = workspace_dir.join("workspace.json");
+
+        if members.is_empty() {
+            // No members → drop the file (ignore error if absent).
+            let _ = std::fs::remove_file(&workspace_json);
+            return Ok(());
+        }
+
+        // Ensure the dir exists.
+        std::fs::create_dir_all(&workspace_dir).map_err(|e| {
+            format!(
+                "failed to create workspace dir {}: {e}",
+                workspace_dir.display()
+            )
+        })?;
+
+        let payload = serde_json::json!({
+            "version": 1,
+            "name": workspace_name,
+            "projects": members.iter().map(|p| &p.project_path).collect::<Vec<_>>(),
+        });
+        let json = serde_json::to_string_pretty(&payload).map_err(|e| {
+            format!("failed to serialize workspace.json for {workspace_name}: {e}")
+        })?;
+
+        // Atomic write: temp + rename.
+        let tmp = workspace_json.with_extension("json.tmp");
+        std::fs::write(&tmp, format!("{json}\n")).map_err(|e| {
+            format!("failed to write {}: {e}", tmp.display())
+        })?;
+        std::fs::rename(&tmp, &workspace_json).map_err(|e| {
+            format!(
+                "failed to rename {} to {}: {e}",
+                tmp.display(),
+                workspace_json.display()
+            )
+        })?;
+        Ok(())
     }
 
     fn unresolved_runtime_status(
@@ -812,17 +1016,22 @@ impl ManagerService {
         settings: &ManagerSettings,
         detail: String,
     ) -> RuntimeStatusRecord {
-        let workspace_dir =
-            crate::config::display_path(&settings.workspace_root().join(&project.id));
+        let workspace_dir = crate::config::display_path(
+            &settings.workspace_root().join(&project.workspace_name),
+        );
         RuntimeStatusRecord::unresolved(
             project.id.clone(),
-            project.assigned_port,
+            project.workspace_name.clone(),
             workspace_dir,
             settings.global_runtime_source.label(),
             detail,
         )
     }
 
+    /// Sprint 10 v0.10.4: emit one ManagedDeployServer per **workspace**.
+    /// Projects sharing a `workspace_name` collapse into a single MCP
+    /// server entry whose javalens process loads them all from the
+    /// `workspace.json` file in `workspace_dir`.
     fn build_deploy_servers(
         &self,
         settings: &ManagerSettings,
@@ -834,34 +1043,56 @@ impl ManagerService {
             .ok()
             .flatten();
 
-        projects
-            .iter()
-            .filter_map(|project| {
+        // Group projects by workspace_name (preserve insertion order).
+        let mut by_workspace: Vec<(String, Vec<&ProjectRecord>)> = Vec::new();
+        for project in projects {
+            if let Some((_, members)) = by_workspace
+                .iter_mut()
+                .find(|(name, _)| name == &project.workspace_name)
+            {
+                members.push(project);
+            } else {
+                by_workspace.push((project.workspace_name.clone(), vec![project]));
+            }
+        }
+
+        by_workspace
+            .into_iter()
+            .filter_map(|(workspace_name, members)| {
+                // Pick any member to resolve the runtime (jar path, data dir).
+                let representative = members.first()?;
                 let reference = self
-                    .resolve_runtime_reference_with(project, settings, installed_runtime.as_ref())
+                    .resolve_runtime_reference_with(
+                        representative,
+                        settings,
+                        installed_runtime.as_ref(),
+                    )
                     .ok()?;
-                let server_id = mcp_server_id_for_project(project);
+                let server_id = mcp_server_id_for_workspace(&workspace_name);
+
                 let mut env = HashMap::new();
-                env.insert("JAVALENS_PROJECT_ID".into(), project.id.clone());
-                env.insert(
-                    "JAVALENS_ASSIGNED_PORT".into(),
-                    project.assigned_port.to_string(),
-                );
-                env.insert("JAVALENS_PROJECT_PATH".into(), project.project_path.clone());
+                env.insert("JAVALENS_WORKSPACE_NAME".into(), workspace_name.clone());
+
+                let project_names: Vec<String> = members
+                    .iter()
+                    .map(|p| p.name.clone())
+                    .collect();
+                let project_paths: Vec<String> = members
+                    .iter()
+                    .map(|p| p.project_path.clone())
+                    .collect();
 
                 Some(ManagedDeployServer {
                     id: server_id,
-                    project_id: project.id.clone(),
-                    project_name: project.name.clone(),
-                    project_path: project.project_path.clone(),
-                    assigned_port: project.assigned_port,
+                    workspace_name,
+                    project_names,
+                    project_paths,
                     command: "java".into(),
                     args: vec![
                         "-jar".into(),
                         reference.resolved_jar_path.clone(),
                         "-data".into(),
                         reference.workspace_dir.clone(),
-                        project.project_path.clone(),
                     ],
                     env,
                 })
@@ -1953,21 +2184,20 @@ fn max_mcp_server_id_len_for_cursor() -> usize {
         .saturating_sub(JAVALENS_TOOL_NAME_BUDGET)
 }
 
-/// `jl-` with port and a short project label; keep total id within Cursor's server+":"+tool cap.
-/// Legacy: `javalens-` (long id).
-fn mcp_server_id_for_project(project: &ProjectRecord) -> String {
+/// Sprint 10 v0.10.4: MCP service ID derived from the workspace name.
+/// Format: `jl-<sanitized-workspace-name>`, capped at the Cursor server-id
+/// budget. Single-workspace mode means each MCP service represents one
+/// logical workspace, not one project.
+fn mcp_server_id_for_workspace(workspace_name: &str) -> String {
     let max_id = max_mcp_server_id_len_for_cursor();
-    let prefix = format!("jl-{}-", project.assigned_port);
+    let prefix = "jl-";
     if prefix.len() >= max_id {
-        return format!("jl-{}", project.assigned_port);
+        return prefix.to_string();
     }
     let max_slug = max_id.saturating_sub(prefix.len());
-    if max_slug == 0 {
-        return prefix.trim_end_matches('-').to_string();
-    }
-    let mut slug = mcp_label_slug(&project.name, &project.project_path, max_slug);
+    let slug = mcp_label_slug(workspace_name, workspace_name, max_slug);
     if slug.is_empty() {
-        let h = mcp_id_hash_suffix(&project.id, max_slug);
+        let h = mcp_id_hash_suffix(workspace_name, max_slug);
         return format!("{prefix}{h}");
     }
     let mut id = format!("{prefix}{slug}");
@@ -1977,8 +2207,8 @@ fn mcp_server_id_for_project(project: &ProjectRecord) -> String {
     while id.ends_with('-') {
         id.pop();
     }
-    if id.len() < prefix.len() {
-        return format!("{prefix}{}", mcp_id_hash_suffix(&project.id, max_slug));
+    if id.len() <= prefix.len() {
+        return format!("{prefix}{}", mcp_id_hash_suffix(workspace_name, max_slug));
     }
     id
 }

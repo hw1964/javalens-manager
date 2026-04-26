@@ -1,7 +1,7 @@
 use crate::config::{display_path, AppPaths};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::{self, OpenOptions},
     path::Path,
     process::{Child, Command, Stdio},
@@ -18,12 +18,19 @@ pub enum RuntimePhase {
     Failed,
 }
 
+/// Status record for a project's runtime. Sprint 10 v0.10.4: multiple
+/// projects sharing a `workspace_name` reflect the same underlying javalens
+/// process — same PID, same workspace_dir, same log file. They differ only
+/// in `project_id`. The frontend continues to read these per-project for
+/// rendering, but the underlying process is shared.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeStatusRecord {
     pub project_id: String,
     pub phase: RuntimePhase,
-    pub assigned_port: u16,
+    /// Sprint 10 v0.10.4: the logical workspace this project belongs to.
+    /// All projects sharing this name run as one MCP service.
+    pub workspace_name: String,
     pub transport: String,
     pub pid: Option<u32>,
     pub workspace_dir: String,
@@ -37,14 +44,14 @@ pub struct RuntimeStatusRecord {
 impl RuntimeStatusRecord {
     pub fn unresolved(
         project_id: String,
-        assigned_port: u16,
+        workspace_name: String,
         workspace_dir: String,
         runtime_label: String,
         detail: String,
     ) -> Self {
         Self {
             phase: RuntimePhase::Failed,
-            assigned_port,
+            workspace_name,
             transport: "stdio".into(),
             pid: None,
             log_path: String::new(),
@@ -58,15 +65,24 @@ impl RuntimeStatusRecord {
     }
 }
 
+/// Reference to a project's runtime — identifies which workspace process
+/// the project belongs to. Built by manager_service from a `ProjectRecord`
+/// + the resolved javalens runtime location.
 #[derive(Debug, Clone)]
 pub struct RuntimeReference {
     pub project_id: String,
-    pub assigned_port: u16,
+    pub workspace_name: String,
+    /// Eclipse `-data` directory for the workspace's javalens process.
+    /// Lives at `<data_root>/workspaces/<workspace_name>/`. Manager_service
+    /// writes `workspace.json` into here before spawn.
     pub workspace_dir: String,
     pub runtime_label: String,
     pub resolved_jar_path: String,
 }
 
+/// Launch request for one javalens spawn. Manager_service has already
+/// written `<workspace_dir>/workspace.json` with the full project list of
+/// the workspace before calling `start_runtime`.
 #[derive(Debug, Clone)]
 pub struct RuntimeLaunchRequest {
     pub project_path: String,
@@ -81,15 +97,28 @@ pub struct CommandSpec {
     pub log_path: String,
 }
 
+/// One javalens process owned by the manager. Sprint 10 v0.10.4: shared
+/// across every project whose `workspace_name` matches this entry's key.
 struct ManagedRuntime {
     child: Child,
     started_at: Instant,
     log_path: String,
+    /// Project IDs whose `workspace_name` made them members of this
+    /// process. The process is killed when the last member leaves.
+    members: HashSet<String>,
+    /// Snapshot of the reference used to start the process — re-applied
+    /// to per-project status records when other members query status.
+    workspace_dir: String,
+    runtime_label: String,
+    resolved_jar_path: String,
 }
 
 pub struct RuntimeManager {
     paths: AppPaths,
+    /// Sprint 10 v0.10.4: keyed by `workspace_name`, not `project_id`.
     handles: Mutex<HashMap<String, ManagedRuntime>>,
+    /// Per-project snapshot cache. Multiple snapshots may point at the
+    /// same `workspace_name` and reflect the same workspace process.
     snapshots: Mutex<HashMap<String, RuntimeStatusRecord>>,
 }
 
@@ -103,19 +132,28 @@ impl RuntimeManager {
         }
     }
 
+    /// Start (or join) the workspace's runtime for `launch_request.reference`.
+    /// If the workspace's process is already running, this just adds the
+    /// project as a member and returns the workspace's status. Otherwise
+    /// spawns javalens. Caller (manager_service) must have written
+    /// `workspace.json` into `workspace_dir` before calling.
     pub fn start_runtime(
         &self,
         launch_request: &RuntimeLaunchRequest,
     ) -> Result<RuntimeStatusRecord, String> {
-        if let Some(status) = self.try_get_active_status(&launch_request.reference)? {
+        let reference = &launch_request.reference;
+
+        // Fast path: workspace already running. Add membership, return
+        // workspace's PID as this project's status.
+        if let Some(status) = self.try_join_running_workspace(reference)? {
             return Ok(status);
         }
 
         self.paths.ensure_dirs()?;
-        fs::create_dir_all(&launch_request.reference.workspace_dir).map_err(|error| {
+        fs::create_dir_all(&reference.workspace_dir).map_err(|error| {
             format!(
                 "failed to create workspace dir {}: {error}",
-                launch_request.reference.workspace_dir
+                reference.workspace_dir
             )
         })?;
 
@@ -146,26 +184,33 @@ impl RuntimeManager {
             )
         })?;
 
+        let pid = child.id();
         let status = RuntimeStatusRecord {
-            project_id: launch_request.reference.project_id.clone(),
+            project_id: reference.project_id.clone(),
             phase: RuntimePhase::Starting,
-            assigned_port: launch_request.reference.assigned_port,
+            workspace_name: reference.workspace_name.clone(),
             transport: "stdio".into(),
-            pid: Some(child.id()),
-            workspace_dir: launch_request.reference.workspace_dir.clone(),
+            pid: Some(pid),
+            workspace_dir: reference.workspace_dir.clone(),
             log_path: log_path.clone(),
-            runtime_label: launch_request.reference.runtime_label.clone(),
-            resolved_jar_path: launch_request.reference.resolved_jar_path.clone(),
+            runtime_label: reference.runtime_label.clone(),
+            resolved_jar_path: reference.resolved_jar_path.clone(),
             service_mode: "manager-process".into(),
-            detail: "Process launched. Next slice can add semantic health probes.".into(),
+            detail: "Process launched. workspace.json drives in-process project loading.".into(),
         };
 
+        let mut members = HashSet::new();
+        members.insert(reference.project_id.clone());
         self.handles.lock().expect("runtime mutex poisoned").insert(
-            launch_request.reference.project_id.clone(),
+            reference.workspace_name.clone(),
             ManagedRuntime {
                 child,
                 started_at: Instant::now(),
                 log_path,
+                members,
+                workspace_dir: reference.workspace_dir.clone(),
+                runtime_label: reference.runtime_label.clone(),
+                resolved_jar_path: reference.resolved_jar_path.clone(),
             },
         );
         self.persist_snapshot(status.clone())?;
@@ -173,46 +218,97 @@ impl RuntimeManager {
         Ok(status)
     }
 
+    /// Project leaves the workspace. If the workspace's process has no
+    /// remaining members, it is killed. The caller (manager_service) is
+    /// responsible for rewriting `workspace.json` so the still-running
+    /// javalens (when there are remaining members) drops the leaving
+    /// project from its in-memory state via the file watcher.
     pub fn stop_runtime(
         &self,
         reference: &RuntimeReference,
     ) -> Result<RuntimeStatusRecord, String> {
-        if let Some(mut handle) = self
-            .handles
-            .lock()
-            .expect("runtime mutex poisoned")
-            .remove(&reference.project_id)
-        {
-            handle
-                .child
-                .kill()
-                .map_err(|error| format!("failed to stop JavaLens process: {error}"))?;
-            let _ = handle.child.wait();
-        }
+        let mut handles = self.handles.lock().expect("runtime mutex poisoned");
 
+        let mut killed = false;
+        if let Some(handle) = handles.get_mut(&reference.workspace_name) {
+            handle.members.remove(&reference.project_id);
+            if handle.members.is_empty() {
+                if let Some(mut handle) = handles.remove(&reference.workspace_name) {
+                    handle
+                        .child
+                        .kill()
+                        .map_err(|error| format!("failed to stop JavaLens process: {error}"))?;
+                    let _ = handle.child.wait();
+                    killed = true;
+                }
+            }
+        }
+        drop(handles);
+
+        let detail = if killed {
+            "Workspace runtime stopped (last project left).".into()
+        } else {
+            "Project left the workspace; runtime continues for remaining members.".into()
+        };
         let status = RuntimeStatusRecord {
             project_id: reference.project_id.clone(),
             phase: RuntimePhase::Stopped,
-            assigned_port: reference.assigned_port,
+            workspace_name: reference.workspace_name.clone(),
             transport: "stdio".into(),
             pid: None,
             workspace_dir: reference.workspace_dir.clone(),
-            log_path: self.default_log_path(&reference.project_id),
+            log_path: self.default_log_path(&reference.workspace_name),
             runtime_label: reference.runtime_label.clone(),
             resolved_jar_path: reference.resolved_jar_path.clone(),
             service_mode: "manager-process".into(),
-            detail: "Runtime stopped.".into(),
+            detail,
         };
 
         self.persist_snapshot(status.clone())?;
         Ok(status)
     }
 
+    /// Sprint 10 v0.10.4: stop the entire workspace process unconditionally.
+    /// All members' snapshots become Stopped. Used by the "Stop workspace"
+    /// button in the grouped Dashboard view.
+    pub fn stop_workspace_runtime(&self, workspace_name: &str) -> Result<(), String> {
+        let removed = {
+            let mut handles = self.handles.lock().expect("runtime mutex poisoned");
+            handles.remove(workspace_name)
+        };
+        if let Some(mut handle) = removed {
+            let members = handle.members.clone();
+            handle
+                .child
+                .kill()
+                .map_err(|error| format!("failed to stop JavaLens process: {error}"))?;
+            let _ = handle.child.wait();
+
+            // Mark every member's snapshot as Stopped.
+            for project_id in members {
+                let snapshot = {
+                    let snapshots = self
+                        .snapshots
+                        .lock()
+                        .expect("runtime snapshot mutex poisoned");
+                    snapshots.get(&project_id).cloned()
+                };
+                if let Some(mut s) = snapshot {
+                    s.phase = RuntimePhase::Stopped;
+                    s.pid = None;
+                    s.detail = "Workspace runtime stopped.".into();
+                    self.persist_snapshot(s)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn get_runtime_status(
         &self,
         reference: &RuntimeReference,
     ) -> Result<RuntimeStatusRecord, String> {
-        if let Some(status) = self.try_get_active_status(reference)? {
+        if let Some(status) = self.try_join_running_workspace_readonly(reference)? {
             return Ok(status);
         }
 
@@ -225,11 +321,11 @@ impl RuntimeManager {
             .unwrap_or_else(|| RuntimeStatusRecord {
                 project_id: reference.project_id.clone(),
                 phase: RuntimePhase::Stopped,
-                assigned_port: reference.assigned_port,
+                workspace_name: reference.workspace_name.clone(),
                 transport: "stdio".into(),
                 pid: None,
                 workspace_dir: reference.workspace_dir.clone(),
-                log_path: self.default_log_path(&reference.project_id),
+                log_path: self.default_log_path(&reference.workspace_name),
                 runtime_label: reference.runtime_label.clone(),
                 resolved_jar_path: reference.resolved_jar_path.clone(),
                 service_mode: "manager-process".into(),
@@ -237,15 +333,35 @@ impl RuntimeManager {
             }))
     }
 
+    /// Forcefully forget a project's runtime association. Removes from
+    /// snapshots and from any workspace's member set. If the project was
+    /// the last member, the workspace process is killed.
     pub fn remove_project_runtime(&self, project_id: &str) -> Result<(), String> {
-        if let Some(mut handle) = self
-            .handles
-            .lock()
-            .expect("runtime mutex poisoned")
-            .remove(project_id)
-        {
-            let _ = handle.child.kill();
-            let _ = handle.child.wait();
+        // Find which workspace (if any) hosts this project, and leave it.
+        let host_workspace = {
+            let handles = self.handles.lock().expect("runtime mutex poisoned");
+            handles
+                .iter()
+                .find_map(|(ws, h)| {
+                    if h.members.contains(project_id) {
+                        Some(ws.clone())
+                    } else {
+                        None
+                    }
+                })
+        };
+
+        if let Some(ws) = host_workspace {
+            let mut handles = self.handles.lock().expect("runtime mutex poisoned");
+            if let Some(handle) = handles.get_mut(&ws) {
+                handle.members.remove(project_id);
+                if handle.members.is_empty() {
+                    if let Some(mut handle) = handles.remove(&ws) {
+                        let _ = handle.child.kill();
+                        let _ = handle.child.wait();
+                    }
+                }
+            }
         }
 
         let snapshots = {
@@ -260,8 +376,13 @@ impl RuntimeManager {
     }
 
     pub fn command_spec_for(&self, launch_request: &RuntimeLaunchRequest) -> CommandSpec {
-        let log_path = self.default_log_path(&launch_request.reference.project_id);
+        let log_path = self.default_log_path(&launch_request.reference.workspace_name);
 
+        // Sprint 10 v0.10.4: javalens reads its project list from
+        // <workspace_dir>/workspace.json (written by manager_service).
+        // No JAVA_PROJECT_PATH env var; that legacy single-project flow is
+        // preserved in javalens-mcp v1.4.0 for direct manual launches but
+        // the manager always uses the workspace.json contract.
         CommandSpec {
             command: "java".into(),
             args: vec![
@@ -270,94 +391,125 @@ impl RuntimeManager {
                 "-data".into(),
                 launch_request.reference.workspace_dir.clone(),
             ],
-            env: vec![(
-                "JAVA_PROJECT_PATH".into(),
-                launch_request.project_path.clone(),
-            )],
+            env: vec![],
             log_path,
         }
     }
 
-    fn try_get_active_status(
+    /// If the workspace's process is already running, register the
+    /// project as a member and return the workspace's PID as this
+    /// project's status. Returns None if no process exists for the
+    /// workspace yet (caller should spawn).
+    fn try_join_running_workspace(
         &self,
         reference: &RuntimeReference,
     ) -> Result<Option<RuntimeStatusRecord>, String> {
-        let mut finished_status: Option<RuntimeStatusRecord> = None;
-        let mut running_status: Option<RuntimeStatusRecord> = None;
+        let mut handles = self.handles.lock().expect("runtime mutex poisoned");
+        let Some(handle) = handles.get_mut(&reference.workspace_name) else {
+            return Ok(None);
+        };
 
+        // Check if the process is still alive.
+        if let Some(exit_status) = handle
+            .child
+            .try_wait()
+            .map_err(|error| format!("failed to inspect JavaLens process state: {error}"))?
         {
-            let mut handles = self.handles.lock().expect("runtime mutex poisoned");
+            // Process has died — treat as no running workspace; caller
+            // will spawn a new one.
+            let detail = if exit_status.success() {
+                "Previous workspace runtime exited cleanly; respawning.".into()
+            } else {
+                format!("Previous workspace runtime exited with status {exit_status}; respawning.")
+            };
+            handles.remove(&reference.workspace_name);
+            drop(handles);
 
-            if let Some(handle) = handles.get_mut(&reference.project_id) {
-                if let Some(exit_status) = handle
-                    .child
-                    .try_wait()
-                    .map_err(|error| format!("failed to inspect JavaLens process state: {error}"))?
-                {
-                    let detail = if exit_status.success() {
-                        "Runtime exited cleanly.".into()
-                    } else {
-                        format!("Runtime exited with status {exit_status}.")
-                    };
-
-                    finished_status = Some(RuntimeStatusRecord {
-                        project_id: reference.project_id.clone(),
-                        phase: if exit_status.success() {
-                            RuntimePhase::Stopped
-                        } else {
-                            RuntimePhase::Failed
-                        },
-                        assigned_port: reference.assigned_port,
-                        transport: "stdio".into(),
-                        pid: None,
-                        workspace_dir: reference.workspace_dir.clone(),
-                        log_path: handle.log_path.clone(),
-                        runtime_label: reference.runtime_label.clone(),
-                        resolved_jar_path: reference.resolved_jar_path.clone(),
-                        service_mode: "manager-process".into(),
-                        detail,
-                    });
-                } else {
-                    let phase = if handle.started_at.elapsed() < Duration::from_secs(2) {
-                        RuntimePhase::Starting
-                    } else {
-                        RuntimePhase::Running
-                    };
-
-                    running_status = Some(RuntimeStatusRecord {
-                        project_id: reference.project_id.clone(),
-                        phase,
-                        assigned_port: reference.assigned_port,
-                        transport: "stdio".into(),
-                        pid: Some(handle.child.id()),
-                        workspace_dir: reference.workspace_dir.clone(),
-                        log_path: handle.log_path.clone(),
-                        runtime_label: reference.runtime_label.clone(),
-                        resolved_jar_path: reference.resolved_jar_path.clone(),
-                        service_mode: "manager-process".into(),
-                        detail:
-                            "Process is alive. Upstream health_check is still deferred to a later slice."
-                                .into(),
-                    });
-                }
-            }
+            // Persist a stopped snapshot for visibility, but signal "not
+            // running" so the caller spawns afresh.
+            let stopped = RuntimeStatusRecord {
+                project_id: reference.project_id.clone(),
+                phase: RuntimePhase::Stopped,
+                workspace_name: reference.workspace_name.clone(),
+                transport: "stdio".into(),
+                pid: None,
+                workspace_dir: reference.workspace_dir.clone(),
+                log_path: self.default_log_path(&reference.workspace_name),
+                runtime_label: reference.runtime_label.clone(),
+                resolved_jar_path: reference.resolved_jar_path.clone(),
+                service_mode: "manager-process".into(),
+                detail,
+            };
+            self.persist_snapshot(stopped)?;
+            return Ok(None);
         }
 
-        if let Some(status) = finished_status {
-            self.handles
-                .lock()
-                .expect("runtime mutex poisoned")
-                .remove(&reference.project_id);
-            self.persist_snapshot(status.clone())?;
-            return Ok(Some(status));
+        handle.members.insert(reference.project_id.clone());
+        let phase = if handle.started_at.elapsed() < Duration::from_secs(2) {
+            RuntimePhase::Starting
+        } else {
+            RuntimePhase::Running
+        };
+        let status = RuntimeStatusRecord {
+            project_id: reference.project_id.clone(),
+            phase,
+            workspace_name: reference.workspace_name.clone(),
+            transport: "stdio".into(),
+            pid: Some(handle.child.id()),
+            workspace_dir: handle.workspace_dir.clone(),
+            log_path: handle.log_path.clone(),
+            runtime_label: handle.runtime_label.clone(),
+            resolved_jar_path: handle.resolved_jar_path.clone(),
+            service_mode: "manager-process".into(),
+            detail: "Joined live workspace runtime; tools/list reflects current workspace.json."
+                .into(),
+        };
+        drop(handles);
+        self.persist_snapshot(status.clone())?;
+        Ok(Some(status))
+    }
+
+    /// Same as try_join_running_workspace but does not add the project to
+    /// the member set. Used by get_runtime_status, which mustn't have
+    /// side effects on membership.
+    fn try_join_running_workspace_readonly(
+        &self,
+        reference: &RuntimeReference,
+    ) -> Result<Option<RuntimeStatusRecord>, String> {
+        let mut handles = self.handles.lock().expect("runtime mutex poisoned");
+        let Some(handle) = handles.get_mut(&reference.workspace_name) else {
+            return Ok(None);
+        };
+
+        if let Some(_exit_status) = handle
+            .child
+            .try_wait()
+            .map_err(|error| format!("failed to inspect JavaLens process state: {error}"))?
+        {
+            // Dead process — caller will see the persisted snapshot.
+            handles.remove(&reference.workspace_name);
+            return Ok(None);
         }
 
-        if let Some(status) = running_status {
-            self.persist_snapshot(status.clone())?;
-            return Ok(Some(status));
-        }
-
-        Ok(None)
+        let phase = if handle.started_at.elapsed() < Duration::from_secs(2) {
+            RuntimePhase::Starting
+        } else {
+            RuntimePhase::Running
+        };
+        let status = RuntimeStatusRecord {
+            project_id: reference.project_id.clone(),
+            phase,
+            workspace_name: reference.workspace_name.clone(),
+            transport: "stdio".into(),
+            pid: Some(handle.child.id()),
+            workspace_dir: handle.workspace_dir.clone(),
+            log_path: handle.log_path.clone(),
+            runtime_label: handle.runtime_label.clone(),
+            resolved_jar_path: handle.resolved_jar_path.clone(),
+            service_mode: "manager-process".into(),
+            detail: "Live workspace runtime.".into(),
+        };
+        Ok(Some(status))
     }
 
     fn persist_snapshot(&self, status: RuntimeStatusRecord) -> Result<(), String> {
@@ -373,8 +525,10 @@ impl RuntimeManager {
         write_runtime_state(&self.paths.runtime_state_file, &snapshots)
     }
 
-    fn default_log_path(&self, project_id: &str) -> String {
-        display_path(&self.paths.log_dir.join(format!("{project_id}.log")))
+    fn default_log_path(&self, workspace_name: &str) -> String {
+        // Sprint 10 v0.10.4: log path keyed by workspace_name (one log per
+        // workspace process), not per project_id.
+        display_path(&self.paths.log_dir.join(format!("{workspace_name}.log")))
     }
 }
 
@@ -427,16 +581,16 @@ mod tests {
             project_path: "/projects/example-service".into(),
             reference: RuntimeReference {
                 project_id: "example-service-1".into(),
-                assigned_port: 11100,
-                workspace_dir: "/cache/javalens/example-service".into(),
-                runtime_label: "Managed JavaLens 1.2.0".into(),
+                workspace_name: "test-ws".into(),
+                workspace_dir: "/cache/javalens/test-ws".into(),
+                runtime_label: "Managed JavaLens 1.4.0".into(),
                 resolved_jar_path: "/tools/javalens/javalens.jar".into(),
             },
         }
     }
 
     #[test]
-    fn command_spec_matches_documented_launch_contract() {
+    fn command_spec_uses_workspace_dir_and_no_env_var() {
         let manager = RuntimeManager::new(fake_paths());
         let launch_request = fake_launch_request();
 
@@ -449,31 +603,28 @@ mod tests {
                 "-jar",
                 "/tools/javalens/javalens.jar",
                 "-data",
-                "/cache/javalens/example-service"
+                "/cache/javalens/test-ws"
             ]
         );
-        assert_eq!(
-            spec.env,
-            vec![(
-                "JAVA_PROJECT_PATH".into(),
-                "/projects/example-service".into()
-            )]
-        );
-        assert!(spec.log_path.ends_with("example-service-1.log"));
+        // Sprint 10 v0.10.4: no JAVA_PROJECT_PATH — workspace.json drives
+        // project loading inside javalens.
+        assert!(spec.env.is_empty());
+        assert!(spec.log_path.ends_with("test-ws.log"));
     }
 
     #[test]
     fn unresolved_runtime_status_carries_runtime_label() {
         let status = RuntimeStatusRecord::unresolved(
             "project-1".into(),
-            11100,
+            "test-ws".into(),
             "/tmp/workspace".into(),
-            "Managed JavaLens 1.2.0".into(),
+            "Managed JavaLens 1.4.0".into(),
             "Missing runtime".into(),
         );
 
         assert!(matches!(status.phase, RuntimePhase::Failed));
-        assert_eq!(status.runtime_label, "Managed JavaLens 1.2.0");
+        assert_eq!(status.workspace_name, "test-ws");
+        assert_eq!(status.runtime_label, "Managed JavaLens 1.4.0");
         assert_eq!(status.detail, "Missing runtime");
     }
 }
