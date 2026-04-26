@@ -428,6 +428,7 @@ The fork (`hw1964/javalens-mcp`) is the user's own version. Upstream PR back to 
 - Sprint 9 (source resolution) and Sprint 10 Phase A (multi-project workspace) work IS general — would benefit any javalens user — and is PR-ready (ADR 0004 portability constraint paid the prep cost up front). Diff stays clean for as long as we want to wait.
 - Future work (Rings 1-4, especially Ring 3's Eclipse plugin packaging) is increasingly JATS-driven. PR-able pieces will be a subset; review-cycle tax on the full set isn't justified.
 - Pzalutski's roadmap is presumably solved for the single-developer / handful-of-projects case (probably a bash script). The 28-project scale that motivated this fork is a different problem and unlikely to be a priority for him.
+- **Networked-service direction.** A future "javalens as a hosted service" (HTTPS + auth + multi-user) is captured separately in [`sprint-future-networked-service.md`](sprint-future-networked-service.md). That direction fundamentally diverges from upstream's local-stdio product identity and is the strongest argument for keeping the fork — the auth/TLS/multi-user surface is too opinionated and too operationally-coupled to PR back. Not scheduled, but marked as a real long-term direction.
 - Re-evaluate the PR question only if (a) upstream goes inactive, (b) we want their user base for free testing, or (c) we've stabilized to the point where convergence beats independence. None of those are true today.
 
 The portability constraint stays in force regardless — it's also what makes Ring 3 (Eclipse plugin) cheap.
