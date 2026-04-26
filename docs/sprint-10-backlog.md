@@ -284,18 +284,21 @@ Recommend **(a)** — fewer services is the goal, 12 covers the realistic max wo
 
 ## Definition of Done
 
-- [ ] All Java tests in Phase A pass; `mvn clean verify` green.
-- [ ] `v1.3.0` of the fork is published with `add_project`, `remove_project`, `list_projects`, multi-project `WorkspaceManager`, and `projectKey`-aware analysis tools.
+- [x] All Java tests in Phase A pass; `mvn clean verify` green. **381/381 passing as of 2026-04-26.**
+- [x] `v1.3.0` of the fork is published with `add_project`, `remove_project`, `list_projects`, multi-project `WorkspaceManager`, and `projectKey`-aware analysis tools. **Published 2026-04-26 from `hw1964/javalens-mcp` — https://github.com/hw1964/javalens-mcp/releases/tag/v1.3.0.**
 - [ ] Manager's port-grouped spawn lands `add_project` / `remove_project` calls correctly for live updates; verified manually with a 5-bundle workspace import.
-- [ ] Service count drops from 28 to 1–3 (= number of workspaces the user chose). Antigravity tool registrations drop from 1,764 (28 × 63) to 63 × <workspaces>, i.e. typically 63–189.
+- [ ] Service count drops from 28 to 1–3 (= number of workspaces the user chose). Antigravity tool registrations drop from 1,848 (28 × 66) to 66 × <workspaces>, i.e. typically 66–198 — well under the 100-tool cap once GitKraken's MCP shim is also removed (decided 2026-04-26).
 - [ ] Help docs explain port-as-workspace.
 - [ ] CHANGELOG / README mention v0.10.0 capabilities and the upcoming v0.11.0 (manager) targeting fork v1.3.0.
 
-## Sprint 11 (preview)
+## Sprint 11 (preview — updated 2026-04-26)
 
-- Workspace bundle pool: `MANIFEST.MF` `Bundle-SymbolicName` / `Require-Bundle` parsing for inter-bundle PDE resolution within the same workspace. Sibling bundles in one workspace see each other natively.
-- Manager release tagged after fork v1.3.0 stabilization.
-- Possible upstream PR back to `pzalutski-pixel/javalens-mcp`.
+Sprint 11 now packages three threads under one fork release (`v1.4.0`):
+- **Detection-matrix completion** — Tycho-aware Maven, workspace bundle pool (MANIFEST.MF `Require-Bundle`), Gradle Tooling API.
+- **Tool-surface consolidation** — collapse ~13 narrow `find_X` tools into 2 parametric tools so per-service tool count drops 66 → 55, leaving ample budget for IDE-grade Sprint 12+ additions.
+- **Cutover** — manager `single_workspace_mode` default flipped to true; manager `v0.11.0` release pairs with fork `v1.4.0`.
+
+Upstream PR posture confirmed: **deferred indefinitely, not abandoned.** See sprint-11-backlog.md "Independence posture" for rationale.
 
 ## Team split
 
