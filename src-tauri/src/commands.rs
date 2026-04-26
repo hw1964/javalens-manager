@@ -57,6 +57,14 @@ pub fn rename_workspace(
 }
 
 #[tauri::command]
+pub fn delete_workspace(
+    state: State<'_, AppState>,
+    workspace_name: String,
+) -> Result<ManagerDashboard, String> {
+    state.manager_service.delete_workspace(&workspace_name)
+}
+
+#[tauri::command]
 pub fn delete_project(
     state: State<'_, AppState>,
     project_id: String,

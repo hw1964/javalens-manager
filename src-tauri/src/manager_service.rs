@@ -305,6 +305,34 @@ impl ManagerService {
         self.load_dashboard()
     }
 
+    /// Sprint 10 v0.10.4: delete a workspace entirely. Kills any running
+    /// javalens subprocess for the workspace, deletes the JDT data dir,
+    /// and deletes every ProjectRecord whose `workspace_name` matched.
+    /// Returns the dashboard reflecting the new state.
+    pub fn delete_workspace(&self, workspace_name: &str) -> Result<ManagerDashboard, String> {
+        // Stop any running process for the workspace.
+        self.runtime_manager.stop_workspace_runtime(workspace_name)?;
+
+        // Delete every project belonging to this workspace.
+        let projects = self.config_store.list_projects();
+        for project in &projects {
+            if project.workspace_name == workspace_name {
+                self.runtime_manager.remove_project_runtime(&project.id)?;
+                self.config_store.delete_project(&project.id)?;
+            }
+        }
+
+        // Delete the JDT data dir on disk (best-effort; ignore errors —
+        // the user can clean up manually if something else holds the dir).
+        let settings = self.config_store.get_settings();
+        let workspace_dir = settings.workspace_root().join(workspace_name);
+        if workspace_dir.exists() {
+            let _ = std::fs::remove_dir_all(&workspace_dir);
+        }
+
+        self.load_dashboard()
+    }
+
     /// Deletes a project by its ID. After removal, rewrites the workspace's
     /// `workspace.json` so the running javalens drops the project via the
     /// file watcher (no respawn needed when other members remain).
