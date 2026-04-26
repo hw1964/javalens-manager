@@ -4,17 +4,18 @@
 
 ## Goal
 
-Three threads, one release:
+Four threads, one release:
 
 1. **Detection-matrix completion** — any project type loaded into a workspace gets fully indexed (sources + dependencies) regardless of build system. Workspace bundle pool resolves `Require-Bundle` between sibling PDE bundles loaded together. Gradle resolution moves from heuristic to proper.
-2. **Tool-surface consolidation** — collapse ~13 narrow `find_X` tools into 2 parametric tools so the per-service tool count drops from 66 to ~55, freeing budget for IDE-grade additions in Sprint 12+ while staying well under the 100-tool cap.
-3. **Cutover** — cut fork release `v1.4.0`, flip manager `single_workspace_mode` default to true, ship manager `v0.11.0`.
+2. **Tool-surface consolidation** — collapse ~13 narrow `find_X` tools into 2 parametric tools so the per-service tool count drops from 66 to ~55, freeing budget for the next thread.
+3. **Structural refactoring (Ring 1, pulled forward from Sprint 12)** — five JDT LTK-backed refactoring tools: `move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`. Move-class and repackaging are the most error-prone operations in agent-driven Java work; without first-class refactoring the agent has to do find-and-replace across imports and qualified names by hand. With LTK behind these tools, javalens-mcp + javalens-manager become a professional-grade autonomous-Java-development toolset that goes beyond what upstream `pzalutski-pixel/javalens-mcp` aims for.
+4. **Cutover** — cut fork release `v1.4.0`, flip manager `single_workspace_mode` default to true, ship manager `v0.11.0`.
 
 End-of-sprint outcome:
 
 - A workspace can hold any mix of regular Maven modules, Maven-Tycho/PDE bundles, pure Eclipse PDE bundles, and Gradle modules, and every project type returns correct source roots + dependencies.
-- Cross-bundle navigation, find-references, and refactoring work between PDE bundles in the same workspace.
-- javalens-mcp registers ~55 tools per service (down from 66) — leaves ~45 slots in the agent's 100-tool budget for Ring 1+ IDE work without future pressure.
+- Cross-bundle navigation, find-references, and refactoring work between PDE bundles in the same workspace — including LTK-backed `pull_up` across OSGi bundle boundaries.
+- javalens-mcp registers ~60 tools per service (66 → 55 from Phase D consolidation, then +5 from Phase E refactorings) — leaves ~40 slots in the agent's 100-tool budget for Ring 2+ work without future pressure.
 - Fork release `v1.4.0` published; manager-side single-workspace mode becomes the default.
 
 Reference plan: `~/.claude/plans/make-a-plan-happy-fern.md`. Predecessor: `docs/sprint-10-backlog.md` (multi-project workspace, shipped as v1.3.0).
@@ -132,11 +133,11 @@ In `ProjectImporter`:
 - `gradle_returnsActualDependencies` — finds the resolved jar paths for declared `implementation`/`testImplementation`.
 - `gradle_customSrcDir` — fixture with `sourceSets.main.java.srcDirs = ['custom-src']` resolves correctly.
 
-## Phase E — Tool-surface consolidation (NEW, added 2026-04-26)
+## Phase D — Tool-surface consolidation
 
 ### Why now
 
-Per-service tool count is 66 today (5 admin + 61 analysis). Single-workspace mode means a healthy 1-workspace setup registers 66 tools against the agent's 100-tool budget. With GitKraken's MCP shim removed (decided 2026-04-26 — `git`/`gh` via Bash already covers everything an autonomous agent needs), 34 slots remain free. Phase E reclaims ~10 more by collapsing redundant `find_X` tools, leaving ~44 free for Ring 1 / Ring 2 IDE additions in Sprint 12+ (Move class, compile_workspace, run_tests, generate_*, encapsulate_field, pull_up/push_down, etc.) without future pressure.
+Per-service tool count is 66 today (5 admin + 61 analysis). Single-workspace mode means a healthy 1-workspace setup registers 66 tools against the agent's 100-tool budget. With GitKraken's MCP shim removed (decided 2026-04-26 — `git`/`gh` via Bash already covers everything an autonomous agent needs), 34 slots remain free. Phase D reclaims ~10 more by collapsing redundant `find_X` tools, leaving ~44 free for Phase E refactoring additions and Sprint 12+ work.
 
 ### Consolidation targets
 
@@ -170,11 +171,11 @@ Two parametric tools replace ~13 narrow ones:
 
 13 tools collapse to 2. Tool count drops 66 → 55. Schema size grows (each parametric tool's `kind` enum is ~8 entries with descriptions) but agent context shrinks overall.
 
-### E.1 Define the parametric tools
+### D.1 Define the parametric tools
 
 Files: new `org.javalens.mcp/src/org/javalens/mcp/tools/FindPatternUsagesTool.java`, `FindQualityIssueTool.java`. Each takes `kind` as a required string enum and dispatches to the existing search/analysis methods underneath. **Reuses existing `SearchService` + analysis logic** — only the tool boundary changes.
 
-### E.2 Schema with discoverable `kind` enum
+### D.2 Schema with discoverable `kind` enum
 
 Each tool's input schema lists allowed `kind` values + per-kind descriptions so agents know what's available. Example:
 
@@ -190,51 +191,190 @@ Each tool's input schema lists allowed `kind` values + per-kind descriptions so 
 
 Optional kind-specific parameters (e.g. `annotationName` for annotation kind, `query` for type-anchored kinds) are documented in description text.
 
-### E.3 Deprecate-and-delete the 13 narrow tools
+### D.3 Deprecate-and-delete the 13 narrow tools
 
 Remove the old `Find*Tool.java` files in the same v1.4.0 release. **Breaking change for any external MCP client that wasn't using javalens-manager.** Acceptable — javalens-manager is the only known consumer; the npm/MCP-Registry surface (which the fork doesn't publish to anyway, see v1.2.1's release-workflow strip) means no third-party tooling depends on these names.
 
-### E.4 Update tool registrations
+### D.4 Update tool registrations
 
 In `JavaLensApplication.registerTools()`: drop the 13 register lines, add the 2 new ones. Tool count goes from 66 to 55.
 
-### E.5 Tests
+### D.5 Tests
 
 `FindPatternUsagesToolTest`, `FindQualityIssueToolTest`:
 - One test per `kind` value verifying it dispatches to the right underlying search and returns the same shape the old narrow tool did. ~13 small tests.
 - One test per tool verifying invalid `kind` returns an `INVALID_PARAMETER` error.
 
-## Phase D — Cutover release
+## Phase E — Structural refactoring tools (Ring 1)
 
-### D.1 Tag fork v1.4.0
+### Why this is part of Sprint 11, not deferred
 
-Bump pom + MANIFEST.MF qualifiers as needed; `git tag -a v1.4.0 -F docs/release-notes/v1.4.0.md`; push tag → CI publishes the GitHub release. Release notes cover Phases A/B/C (detection matrix) and Phase E (tool consolidation) under one curated note.
+Move-class and repackaging are the most error-prone operations in agent-driven Java work. Without first-class JDT-backed refactoring, the agent has to do find-and-replace across imports, qualified-name strings, and class-file paths by hand — every JATS-style RCP overhaul, bundle merge, package rename, or hierarchy reshuffle fights the agent. With JDT LTK behind these tools, the agent gets the same atomic, reference-aware refactoring Eclipse/IntelliJ users have had for two decades. Combined with javalens-manager, this turns javalens-mcp into an actually professional-grade tool for autonomous Java development — a level upstream is unlikely to reach because they don't have the use case driving it.
 
-### D.2 Flip manager defaults
+### What's in Ring 1
+
+Five JDT LTK-backed refactoring tools. Each is a thin tool wrapper around `org.eclipse.jdt.core.refactoring.descriptors.*` + `RefactoringCore` apply.
+
+| Tool | JDT descriptor | What it does |
+|---|---|---|
+| `move_class` | `MoveDescriptor` (`IJavaRefactorings.MOVE`) | Move one or more types to a different package. Updates all `import` lines, qualified references, and the file's location on disk. Honors `.classpath` source folders. |
+| `move_package` | `RenameDescriptor` (`IJavaRefactorings.RENAME_PACKAGE`) with new package name | Move/rename a whole package, recursing into all CUs. Updates `package` declarations and all references workspace-wide. |
+| `pull_up` | `PullUpDescriptor` (`IJavaRefactorings.PULL_UP`) | Move a method or field from a subtype up to a supertype. Optionally turns the original into an abstract declaration. |
+| `push_down` | `PushDownDescriptor` (`IJavaRefactorings.PUSH_DOWN`) | Move a method or field from a supertype into one or more subtypes. Removes the original. |
+| `encapsulate_field` | `EncapsulateFieldDescriptor` (`IJavaRefactorings.ENCAPSULATE_FIELD`) | Generate getter/setter for a field, replace all direct accesses with the new methods, optionally tighten the field's visibility. |
+
+After Phase E: 55 (post-Phase D) + 5 = **60 tools per service**. Headroom against the 100 cap stays at ~40.
+
+### E.0 Shared `AbstractRefactoringTool` base class
+
+File: `org.javalens.mcp/src/org/javalens/mcp/tools/AbstractRefactoringTool.java`. Encapsulates the LTK plumbing shared across all five tools so each individual tool stays small.
+
+```java
+abstract class AbstractRefactoringTool extends AbstractTool {
+    protected ToolResponse runRefactoring(
+        IJdtService service,
+        RefactoringDescriptor descriptor,
+        String operationLabel
+    ) {
+        // 1. descriptor.createRefactoring(status)
+        // 2. checkInitialConditions(monitor)  — bail with INVALID_PARAMETER on ERROR severity
+        // 3. checkFinalConditions(monitor)    — bail similarly
+        // 4. createChange(monitor) → Change
+        // 5. PerformChangeOperation.run(...)
+        // 6. Collect modified ICompilationUnits, format paths via service.getPathUtils()
+        // 7. Return success { modifiedFiles, summary } or invalidParameter / refactoringFailed
+    }
+}
+```
+
+The tools then become ~80–120 LOC each: parse arguments, build the JDT descriptor, call `runRefactoring`. The same base also handles dirty-buffer detection, conflict diagnostics, and rollback on partial failure.
+
+### E.1 `move_class`
+
+```
+Input:
+  filePath: string         (source file containing the type)
+  line, column: integer    (zero-based, points anywhere inside the type)
+  targetPackage: string    (e.g. "com.example.api")
+  updateReferences: bool   (default true)
+
+Output:
+  modifiedFiles: [{filePath, summary}]
+  newFilePath: string (where the file ended up)
+```
+
+Internals: `service.getTypeAtPosition(filePath, line, column)` → `IType`, then build `MoveDescriptor` with `setMoveResources(new IResource[]{type.getResource()})` + target package handle. Reuses A.4.2's `ScopedJdtService` so the agent can scope to one project via `projectKey` if a class name collides across projects.
+
+### E.2 `move_package`
+
+```
+Input:
+  packageName: string                  (e.g. "com.example.old")
+  newPackageName: string               (e.g. "com.example.new")
+  updateReferences: bool   (default true)
+```
+
+Internals: `service.getJavaProject().findPackageFragment(...)` → `IPackageFragment`. `RenameDescriptor.setProject(...)`, `setNewName(newPackageName)`, `setUpdateReferences(true)`.
+
+### E.3 `pull_up`
+
+```
+Input:
+  filePath, line, column   (positions to a method/field in a subtype)
+  targetSuperType?: string (FQ name; default = direct superclass)
+  abstractInOriginal: bool (default true for methods, false for fields)
+```
+
+Internals: `getElementAtPosition(...)` → `IMember`, build `PullUpDescriptor` with `setSubtype(declaringType)`, `setMembersToMove(new IMember[]{member})`, target supertype lookup via `service.findType(targetSuperType)`. If the supertype is in another project in the workspace — fine, the workspace-scoped `IJavaSearchScope` from A.4.1 already lets JDT see across project boundaries.
+
+### E.4 `push_down`
+
+```
+Input:
+  filePath, line, column   (positions to a method/field in a supertype)
+  targetSubTypes?: [string] (FQ names; default = all direct subtypes)
+  removeFromOriginal: bool (default true)
+```
+
+Internals: `PushDownDescriptor`. Pre-flight check: enumerate subtypes via JDT `ITypeHierarchy` and warn if any are read-only (in a binary jar, not source).
+
+### E.5 `encapsulate_field`
+
+```
+Input:
+  filePath, line, column   (positions to a field declaration or reference)
+  getterName?: string      (default: "get" + capitalized name; "is" for boolean)
+  setterName?: string      (default: "set" + capitalized name)
+  newFieldVisibility: string (default "private"; one of public|protected|private|package)
+  generateJavadoc: bool    (default false)
+```
+
+Internals: `EncapsulateFieldDescriptor.setField(field)`, `setGetterName(...)`, `setSetterName(...)`, `setVisibility(...)`. JDT handles the ref-to-getter rewrite, but the agent still gets a list of modified files for verification.
+
+### E.6 `projectKey` semantics for refactorings
+
+All five tools accept the optional `projectKey` parameter (inherited from `AbstractTool`). When set, the refactoring is constrained to that project's scope — important for `pull_up`/`push_down` where the agent doesn't want to accidentally drag unrelated workspace projects into the change set. When omitted, refactorings run with workspace-wide scope (the natural default for cross-bundle refactorings, e.g. moving a class out of one OSGi bundle into another).
+
+### E.7 Tests
+
+Per refactoring tool, three tests minimum (~5 × 3 = 15 tests):
+
+1. **Happy path** — apply the refactoring against a fixture; assert modified files and verify with a follow-up search/parse that references resolve.
+2. **Validation error** — invalid input (e.g. `move_class` with target package that doesn't exist, or `encapsulate_field` against a non-field) returns `INVALID_PARAMETER` with a clear message.
+3. **Conflict / safety** — refactoring would break compilation (e.g. `move_class` with target package containing a same-named class) returns `REFACTORING_FAILED` with the LTK status diagnostics, and **no files are modified**.
+
+Plus 1 integration test: `pullUp_acrossOsgiBundles` — fixture with two PDE bundles, pull a method from a subtype in bundle B up to a supertype in bundle A. Verifies workspace-scoped refactoring crosses bundle boundaries (relies on Phase B's bundle pool).
+
+### Out of scope for Phase E (deferred to Sprint 12 or later)
+
+These are also Eclipse/IntelliJ standards but not required for the JATS overhaul this sprint:
+
+- `convert_local_to_field` / `convert_field_to_local`
+- `replace_constructor_with_factory` / `inline_constructor`
+- `generalize_type_parameter` (replace concrete type with interface in declarations)
+- `introduce_parameter` / `remove_parameter` (we have `change_method_signature` already; explicit single-axis ops are easier for agents but not critical)
+- `introduce_parameter_object`
+- `replace_inheritance_with_delegation` / vice versa
+- Bulk JDK-API migration (var, switch expressions, sealed types, records, text blocks)
+- Workspace verification helpers (`compile_workspace`, `run_tests`) — Ring 1 of the IDE roadmap, but they sit at the boundary between refactoring and verification; deferring keeps Sprint 11 sized.
+
+### Phase E size warning
+
+Phase E makes Sprint 11 substantially bigger than originally planned (was ~2 weeks for detection-matrix + cutover; now ~3 weeks with 5 LTK refactorings added). Acceptable because the JATS overhaul depends on these tools and "do them in Sprint 12" would mean an extra fork release for one feature set. If the sprint runs over, the natural cut line is to ship Phases A/B/C/D as `v1.4.0` first, then a fast follow-up `v1.4.1` with Phase E once the LTK plumbing settles.
+
+## Phase F — Cutover release
+
+### F.1 Tag fork v1.4.0
+
+Bump pom + MANIFEST.MF qualifiers as needed; `git tag -a v1.4.0 -F docs/release-notes/v1.4.0.md`; push tag → CI publishes the GitHub release. Release notes cover Phases A/B/C (detection matrix), Phase D (tool consolidation), and Phase E (refactoring tools) under one curated note.
+
+### F.2 Flip manager defaults
 
 In `javalens-manager/src-tauri/src/config.rs`:
 
 - Sprint 10 introduced `single_workspace_mode` behind a flag. Sprint 11 flips its default to `true` for fresh installs (one workspace per port group, all related projects share one MCP service).
 - Existing user settings preserved.
 
-### D.3 Manager release
+### F.3 Manager release
 
-Tag the manager (e.g., `v0.11.0`) targeting fork `v1.4.0`. Update README and Help docs to reflect the now-default port-as-workspace + bundle-pool behavior + the consolidated tool surface.
+Tag the manager (e.g., `v0.11.0`) targeting fork `v1.4.0`. Update README and Help docs to reflect the now-default port-as-workspace + bundle-pool behavior, the consolidated tool surface, and the new structural refactoring tools (`move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`).
 
 ## Tests rollup
 
 - Phase A: `ProjectImporterTychoPackagingTest` (3 tests).
 - Phase B: `ProjectImporterBundlePoolTest` (4 tests). Add 2 fixture PDE bundles.
 - Phase C: `ProjectImporterGradleToolingTest` (3 tests). Add `simple-gradle` fixture.
-- Phase E: `FindPatternUsagesToolTest` + `FindQualityIssueToolTest` (~13 dispatch tests + 2 invalid-kind tests).
+- Phase D: `FindPatternUsagesToolTest` + `FindQualityIssueToolTest` (~13 dispatch tests + 2 invalid-kind tests).
+- Phase E: per-tool happy/validation/conflict trio (~15 tests) + 1 cross-bundle integration test (`pullUp_acrossOsgiBundles`).
 - Plus regression suite from Sprint 9 + Sprint 10 must stay green (381 tests today).
 
 ## Definition of Done
 
 - [ ] All four detection-matrix cells return correct source roots + deps for their respective fixtures.
 - [ ] Cross-bundle find-references works across two PDE bundles loaded into one workspace.
-- [ ] Tool count per service drops to ~55 (from 66 in v1.3.0).
-- [ ] Fork `v1.4.0` published with detection-matrix completion + workspace bundle pool + Gradle Tooling API + tool-surface consolidation.
+- [ ] Tool count per service drops to ~55 (from 66 in v1.3.0); after Phase E adds 5 refactoring tools, lands at ~60.
+- [ ] All five Phase E refactoring tools (`move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`) pass happy/validation/conflict tests; cross-bundle `pull_up` integration test green.
+- [ ] Fork `v1.4.0` published with detection-matrix completion + workspace bundle pool + Gradle Tooling API + tool-surface consolidation + structural refactoring.
 - [ ] Manager `single_workspace_mode` default = true; release tagged.
 - [ ] No regression on Sprint 9 / Sprint 10 fixtures.
 
@@ -252,24 +392,21 @@ Antigravity caps at ~100 tool registrations across all MCP services. The plan to
 
 | Server | Tools | Decision |
 |---|---|---|
-| javalens (1 workspace, post-Sprint 10 Phase B/C) | 66 today, 55 after Sprint 11 Phase E | core |
+| javalens (1 workspace, post-Sprint 10 Phase B/C) | 66 today → 55 after Sprint 11 Phase D → 60 after Sprint 11 Phase E | core |
 | GitKraken MCP shim | 25 | **drop** — `git`/`gh` via Bash already covers everything an autonomous agent needs; the desktop GUI stays useful for humans (visual rebase, conflict UI), it's only the MCP shim that's redundant |
-| Headroom for Ring 1-4 IDE work (Sprint 12+) | ~45 slots | future |
+| Headroom for Ring 2+ IDE work (Sprint 12+) | ~40 slots | future |
 
-Math: 55 (javalens) + 0 (GitKraken removed) = 55, leaving 45 slots free for IDE-grade additions. Ring 1 (~6 tools) + Ring 2 (~8 tools) = 14, lands at 69. Still 31 under the cap. Ring 4 (debugging, 15+ tools) is the only thing that could blow the budget — and per the analysis below, debugging is the lowest-leverage addition for autonomous safe-upgrade work, so deferring it is fine.
+Math after Sprint 11: 60 (javalens, post-Phase E) + 0 (GitKraken removed) = 60, leaving 40 slots free. Ring 2 (~8 tools) lands at 68. Ring 4 (debugging, 15+ tools) is the only thing that could blow the budget — and per the analysis below, debugging is the lowest-leverage addition for autonomous safe-upgrade work, so deferring it is fine.
 
 ### IDE-grade roadmap (Sprint 12+, preview only)
 
-Captured 2026-04-26 from the strategic discussion on what extends javalens to "full-IDE-grade autonomous Java development" — driven by the JATS RCP overhaul use case (safe upgrades, bundle reshuffles, JDK migration).
+Captured 2026-04-26 from the strategic discussion on what extends javalens to "full-IDE-grade autonomous Java development" — driven by the JATS RCP overhaul use case (safe upgrades, bundle reshuffles, JDK migration). **Ring 1 was originally planned for Sprint 12 but its core refactoring tools (move/pull/push/encapsulate) were pulled forward into Sprint 11 Phase E.** Remaining Ring 1 + Rings 2-4 below.
 
-**Ring 1 — highest JATS-overhaul leverage** (~one sprint, 5–6 tools):
-- `move_class` / `move_package` — biggest gap for bundle reshuffles. JDT's `JavaRefactoringContribution` + LTK already does the heavy lifting.
-- `pull_up` / `push_down` — cross-hierarchy member moves; critical for inheritance refactors.
-- `encapsulate_field` — replace direct field access with getter/setter.
+**Ring 1 — workspace verification (deferred to Sprint 12; ~2 tools):**
 - `compile_workspace` — one tool returning every diagnostic across all loaded projects. The missing feedback loop that lets agents verify "did this refactor break anything?" in one call.
 - `run_tests(class | method | package)` — JUnit launching + capture. Closes the refactor → test → fix loop.
 
-After Ring 1, JATS upgrades become a "find what to change → refactor → compile → test" loop the agent can run end-to-end.
+After Sprint 11 Phase E + Sprint 12 Ring 1 verification, JATS upgrades become a "find what to change → refactor → compile → test" loop the agent can run end-to-end.
 
 **Ring 2 — rounds out the IDE-grade autonomous loop** (~one sprint, 6–8 tools):
 - `generate_constructor`, `generate_equals_hashcode`, `generate_to_string`, `generate_getters_setters`, `override_methods` — JDT has all the AST APIs.
@@ -311,7 +448,9 @@ Currently the manager downloads the runtime separately (per `release_repo`). Bun
 ## Team split (preview)
 
 - `java-engineer`: Phases A, B, C — Tycho detection, bundle pool, Gradle Tooling API.
-- `tauri-engineer`: Phase D — defaults flip, manager release.
-- `release-engineer`: fork `v1.3.0` + manager `v0.11.0` cuts.
-- `qa-test-engineer`: full detection-matrix verification across the four layout types.
-- `docs-engineer`: README + Help.md updates for v0.11.0.
+- `java-engineer` (or split): Phase D — `find_pattern_usages`, `find_quality_issue` parametric tools + 13-tool deletion.
+- `java-engineer`: Phase E — `AbstractRefactoringTool` base + 5 LTK-backed refactoring tools (`move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`).
+- `tauri-engineer`: Phase F — defaults flip, manager release.
+- `release-engineer`: fork `v1.4.0` + manager `v0.11.0` cuts.
+- `qa-test-engineer`: full detection-matrix verification across the four layout types + refactoring conflict/safety scenarios.
+- `docs-engineer`: README + Help.md updates for v0.11.0, including new refactoring tools and consolidated `find_*` surface.
