@@ -836,6 +836,100 @@ button:disabled {
   border-color: rgba(96, 165, 250, 0.55);
 }
 
+/* Sprint 10 v0.10.4: workspace-grouped Dashboard view. One card per
+   logical workspace, with project rows nested inside. */
+.workspace-card {
+  display: grid;
+  gap: 0.4rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  padding: 0.6rem 0.75rem;
+  background: rgba(15, 23, 42, 0.45);
+  min-width: 0;
+}
+
+.workspace-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.workspace-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.workspace-toggle {
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 6px;
+  font-size: 0.7rem;
+  color: #cbd5f5;
+}
+
+.workspace-toggle:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.workspace-name {
+  background: transparent;
+  border: 1px dashed transparent;
+  padding: 0.15rem 0.4rem;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f8fafc;
+  cursor: text;
+}
+
+.workspace-name:hover:not(:disabled) {
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.workspace-rename-input {
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.15rem 0.4rem;
+  border-radius: 6px;
+  border: 1px solid rgba(96, 165, 250, 0.55);
+  background: rgba(15, 23, 42, 0.7);
+  color: #f8fafc;
+  min-width: 12rem;
+}
+
+.workspace-status {
+  margin-left: 0.2rem;
+}
+
+.workspace-meta {
+  font-size: 0.78rem;
+}
+
+.workspace-actions {
+  flex-shrink: 0;
+}
+
+.workspace-projects {
+  margin-left: 0.5rem;
+  padding-left: 0.6rem;
+  border-left: 2px solid rgba(148, 163, 184, 0.12);
+}
+
+.project-card.nested {
+  background: rgba(15, 23, 42, 0.35);
+}
+
 .project-row {
   display: flex;
   justify-content: space-between;

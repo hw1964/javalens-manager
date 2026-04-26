@@ -50,6 +50,14 @@
   let pendingDeployMode: DeployMode = "deploy";
   let deployTargetsDraft: DeployTargetFlags = { ...deployTargetDefaults };
 
+  /** Sprint 10 v0.10.4: workspace-grouping state. */
+  /** Workspaces collapsed in the UI. Default: all expanded. */
+  let collapsedWorkspaces: Record<string, boolean> = {};
+  /** Which workspace is being renamed inline (null = none). */
+  let renamingWorkspace: string | null = null;
+  let renameDraft = "";
+  let renameError = "";
+
   function registerRow(node: HTMLElement, projectId: string) {
     rowRefs[projectId] = node;
     return {
@@ -144,9 +152,7 @@
   }
 
   /** Sprint 10 v0.10.4: prompt for a new workspace name and move the
-   * project. The minimal UI for this — a button on the project row that
-   * opens a prompt() — is replaced by the grouped Dashboard view in a
-   * follow-up; this stub keeps the wiring for the new API. */
+   * project. */
   function moveProjectToWorkspace(project: ProjectRecord) {
     const target = window.prompt(
       `Move "${project.name}" to which workspace?\nCurrently in: ${project.workspaceName}`,
@@ -154,6 +160,76 @@
     );
     if (target && target.trim().length > 0 && target.trim() !== project.workspaceName) {
       onSetWorkspace(project.id, target.trim());
+    }
+  }
+
+  function toggleWorkspaceCollapsed(name: string) {
+    collapsedWorkspaces = {
+      ...collapsedWorkspaces,
+      [name]: !collapsedWorkspaces[name]
+    };
+  }
+
+  function startRenameWorkspace(name: string) {
+    renamingWorkspace = name;
+    renameDraft = name;
+    renameError = "";
+  }
+
+  function cancelRenameWorkspace() {
+    renamingWorkspace = null;
+    renameDraft = "";
+    renameError = "";
+  }
+
+  function commitRenameWorkspace() {
+    if (renamingWorkspace === null) return;
+    const trimmed = renameDraft.trim();
+    if (trimmed.length === 0) {
+      renameError = "Workspace name cannot be empty.";
+      return;
+    }
+    if (trimmed === renamingWorkspace) {
+      cancelRenameWorkspace();
+      return;
+    }
+    onRenameWorkspace(renamingWorkspace, trimmed);
+    cancelRenameWorkspace();
+  }
+
+  function handleRenameKeydown(event: KeyboardEvent) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitRenameWorkspace();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      cancelRenameWorkspace();
+    }
+  }
+
+  function handleDeleteWorkspace(name: string, projectCount: number) {
+    const detail =
+      projectCount === 0
+        ? `Delete workspace "${name}"?`
+        : `Delete workspace "${name}" and all ${projectCount} project(s) inside it?\n\nThis stops the workspace's javalens process and removes the JDT data dir on disk. Project paths on your filesystem are not touched.`;
+    if (window.confirm(detail)) {
+      onDeleteWorkspace(name);
+    }
+  }
+
+  function startWorkspace(workspaceProjects: ProjectRecord[]) {
+    // First member triggers the spawn; subsequent members join the
+    // running process (runtime_manager dedupes via membership).
+    for (const project of workspaceProjects) {
+      onStart(project.id);
+    }
+  }
+
+  function stopWorkspace(workspaceProjects: ProjectRecord[]) {
+    // Each per-project stop_runtime call removes that project from the
+    // workspace's member set. The last leaver kills the workspace process.
+    for (const project of workspaceProjects) {
+      onStop(project.id);
     }
   }
 
@@ -175,6 +251,41 @@
   $: totalProjects = projects.length;
   $: runningProjects = projects.filter((project) => runtimeStatuses[project.id]?.phase === "running").length;
   $: stoppedProjects = totalProjects - runningProjects;
+
+  /** Sprint 10 v0.10.4: group projects by workspace_name, preserving
+   * insertion order, and compute per-workspace aggregate status. */
+  $: groupedWorkspaces = (() => {
+    const order: string[] = [];
+    const byName: Record<string, ProjectRecord[]> = {};
+    for (const project of projects) {
+      const name = project.workspaceName || "workspace-default";
+      if (!byName[name]) {
+        order.push(name);
+        byName[name] = [];
+      }
+      byName[name].push(project);
+    }
+    return order.map((name) => {
+      const ws_projects = byName[name];
+      const ws_phases = ws_projects.map(
+        (p) => runtimeStatuses[p.id]?.phase ?? "stopped"
+      );
+      const ws_phase =
+        ws_phases.every((ph) => ph === "running")
+          ? "running"
+          : ws_phases.every((ph) => ph === "stopped")
+            ? "stopped"
+            : "starting";
+      const ws_running = ws_projects.filter(
+        (p) => runtimeStatuses[p.id]?.phase === "running"
+      ).length;
+      return { name, projects: ws_projects, phase: ws_phase, runningCount: ws_running };
+    });
+  })();
+
+  $: totalWorkspaces = groupedWorkspaces.length;
+  $: runningWorkspaces = groupedWorkspaces.filter((w) => w.phase === "running").length;
+  $: stoppedWorkspaces = groupedWorkspaces.filter((w) => w.phase === "stopped").length;
   $: selectedDeployTargetCount = deployTargetOptions.filter((option) => deployTargetsDraft[option.key]).length;
   $: highlightedDeployMode = showDeployTargetPicker ? pendingDeployMode : "deploy";
 
@@ -201,11 +312,12 @@
           {aggregateLabel}
         </span>
       </h2>
-      <p class="muted">Project services managed by the manager.</p>
+      <p class="muted">Project services managed by the manager, grouped by workspace.</p>
       <div class="project-summary-metrics">
-        <span class="metric-pill">Total {totalProjects}</span>
-        <span class="metric-pill running">Running {runningProjects}</span>
-        <span class="metric-pill stopped">Not running {stoppedProjects}</span>
+        <span class="metric-pill">Workspaces {totalWorkspaces}</span>
+        <span class="metric-pill running">Running {runningWorkspaces}</span>
+        <span class="metric-pill stopped">Stopped {stoppedWorkspaces}</span>
+        <span class="metric-pill">Projects {totalProjects}</span>
       </div>
     </div>
     <div class="project-list-toolbar segmented-actions">
@@ -313,70 +425,138 @@
     </div>
   {:else}
     <div class="stack project-list-scroll">
-      {#each projects as project}
-        {@const status = runtimeStatuses[project.id]}
-        <article
-          class:selected={project.id === selectedProjectId}
-          class="project-card"
-          use:registerRow={project.id}
-        >
-          <div class="project-row">
-            <div class="project-left">
-              <button class="select" on:click={() => onSelect(project.id)} type="button">
-                <h3>{project.name}</h3>
+      {#each groupedWorkspaces as workspace (workspace.name)}
+        {@const collapsed = collapsedWorkspaces[workspace.name] ?? false}
+        {@const isRenaming = renamingWorkspace === workspace.name}
+        <article class="workspace-card">
+          <header class="workspace-header">
+            <div class="workspace-title">
+              <button
+                aria-label={collapsed ? "Expand workspace" : "Collapse workspace"}
+                class="workspace-toggle"
+                on:click={() => toggleWorkspaceCollapsed(workspace.name)}
+                title={collapsed ? "Expand" : "Collapse"}
+                type="button"
+              >
+                {collapsed ? "▶" : "▼"}
               </button>
-              <p class="path" title={project.projectPath}>{project.projectPath}</p>
-              <div class="meta">
-                <div class="port-row">
-                  <span>Workspace</span>
-                  <div class="port-editor">
-                    <span title={`Workspace ${project.workspaceName}`}>{project.workspaceName}</span>
-                    <button
-                      disabled={disabled}
-                      on:click={() => moveProjectToWorkspace(project)}
-                      type="button"
-                    >
-                      Move…
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="project-right">
-              <div class="status-actions">
+              {#if isRenaming}
+                <input
+                  aria-label="Rename workspace"
+                  bind:value={renameDraft}
+                  class="workspace-rename-input"
+                  on:blur={commitRenameWorkspace}
+                  on:keydown={handleRenameKeydown}
+                  autofocus
+                />
+              {:else}
                 <button
-                  aria-label={`Refresh status for ${project.name}`}
-                  class="icon-refresh"
+                  aria-label={`Rename workspace ${workspace.name}`}
+                  class="workspace-name"
                   disabled={disabled}
-                  on:click={() => onRefresh(project.id)}
-                  title="Refresh status"
+                  on:click={() => startRenameWorkspace(workspace.name)}
+                  title="Click to rename"
                   type="button"
                 >
-                  ↻
+                  {workspace.name}
                 </button>
-                <span class={`badge ${status?.phase ?? "stopped"}`}>
-                  <span class={`status-lamp ${status?.phase ?? "stopped"}`}></span>
-                  {status?.phase ?? "stopped"}
-                </span>
-              </div>
-              <div class="actions row-actions">
-                <button disabled={disabled} on:click={() => onStart(project.id)} type="button">
-                  Start
-                </button>
-                <button disabled={disabled} on:click={() => onStop(project.id)} type="button">
-                  Stop
-                </button>
-                <button disabled={disabled} on:click={() => onDelete(project.id)} type="button">
-                  Delete
-                </button>
-              </div>
+              {/if}
+              <span class={`badge workspace-status ${workspace.phase}`}>
+                <span class={`status-lamp ${workspace.phase}`}></span>
+                {workspace.phase}
+              </span>
+              <span class="workspace-meta muted">
+                {workspace.projects.length} project{workspace.projects.length === 1 ? "" : "s"}
+                {#if workspace.runningCount > 0 && workspace.phase !== "running"}
+                  · {workspace.runningCount} running
+                {/if}
+              </span>
             </div>
-          </div>
-          {#if projectErrors[project.id]}
-            <p class="project-error">{projectErrors[project.id]}</p>
-          {:else if extractProjectError(status)}
-            <p class="project-error">{extractProjectError(status)}</p>
+            <div class="actions workspace-actions">
+              <button
+                disabled={disabled}
+                on:click={() => startWorkspace(workspace.projects)}
+                type="button"
+              >
+                Start workspace
+              </button>
+              <button
+                disabled={disabled}
+                on:click={() => stopWorkspace(workspace.projects)}
+                type="button"
+              >
+                Stop workspace
+              </button>
+              <button
+                disabled={disabled}
+                on:click={() => handleDeleteWorkspace(workspace.name, workspace.projects.length)}
+                type="button"
+              >
+                Delete workspace
+              </button>
+            </div>
+          </header>
+          {#if isRenaming && renameError}
+            <p class="project-error">{renameError}</p>
+          {/if}
+          {#if !collapsed}
+            <div class="workspace-projects stack">
+              {#each workspace.projects as project (project.id)}
+                {@const status = runtimeStatuses[project.id]}
+                <article
+                  class:selected={project.id === selectedProjectId}
+                  class="project-card nested"
+                  use:registerRow={project.id}
+                >
+                  <div class="project-row">
+                    <div class="project-left">
+                      <button class="select" on:click={() => onSelect(project.id)} type="button">
+                        <h3>{project.name}</h3>
+                      </button>
+                      <p class="path" title={project.projectPath}>{project.projectPath}</p>
+                    </div>
+
+                    <div class="project-right">
+                      <div class="status-actions">
+                        <button
+                          aria-label={`Refresh status for ${project.name}`}
+                          class="icon-refresh"
+                          disabled={disabled}
+                          on:click={() => onRefresh(project.id)}
+                          title="Refresh status"
+                          type="button"
+                        >
+                          ↻
+                        </button>
+                        <span class={`badge ${status?.phase ?? "stopped"}`}>
+                          <span class={`status-lamp ${status?.phase ?? "stopped"}`}></span>
+                          {status?.phase ?? "stopped"}
+                        </span>
+                      </div>
+                      <div class="actions row-actions">
+                        <button disabled={disabled} on:click={() => onStart(project.id)} type="button">
+                          Start
+                        </button>
+                        <button disabled={disabled} on:click={() => onStop(project.id)} type="button">
+                          Stop
+                        </button>
+                        <button disabled={disabled} on:click={() => moveProjectToWorkspace(project)} type="button">
+                          Move…
+                        </button>
+                        <button disabled={disabled} on:click={() => onDelete(project.id)} type="button">
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  {#if projectErrors[project.id]}
+                    <p class="project-error">{projectErrors[project.id]}</p>
+                  {:else if extractProjectError(status)}
+                    <p class="project-error">{extractProjectError(status)}</p>
+                  {/if}
+                </article>
+              {/each}
+            </div>
           {/if}
         </article>
       {/each}
