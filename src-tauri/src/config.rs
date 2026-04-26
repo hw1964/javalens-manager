@@ -955,4 +955,291 @@ mod tests {
         assert!(settings.auto_check_for_updates);
         assert_eq!(settings.data_root, "/tmp/cache/javalens-manager");
     }
+
+    // ============================================================
+    // Sprint 10 v0.10.4: workspace_name + migration tests.
+    // ============================================================
+
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// Returns a unique tempdir path per call, so concurrent tests don't
+    /// step on each other's projects.json / settings.json files.
+    fn unique_tempdir(label: &str) -> PathBuf {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!(
+            "javalens-manager-test-{label}-{}-{}-{}",
+            std::process::id(),
+            nanos,
+            n
+        ));
+        fs::create_dir_all(&dir).expect("failed to create test tempdir");
+        dir
+    }
+
+    fn paths_in(dir: &Path) -> AppPaths {
+        let p = AppPaths {
+            config_dir: dir.to_path_buf(),
+            state_dir: dir.to_path_buf(),
+            cache_dir: dir.to_path_buf(),
+            projects_file: dir.join("projects.json"),
+            settings_file: dir.join("settings.json"),
+            runtime_state_file: dir.join("runtime-state.json"),
+            default_data_root: dir.to_path_buf(),
+            log_dir: dir.join("logs"),
+        };
+        fs::create_dir_all(&p.log_dir).unwrap();
+        p
+    }
+
+    #[test]
+    fn sanitize_workspace_name_empty_returns_default() {
+        assert_eq!(sanitize_workspace_name(""), "workspace-default");
+        assert_eq!(sanitize_workspace_name("   "), "workspace-default");
+        assert_eq!(sanitize_workspace_name("\t\n"), "workspace-default");
+    }
+
+    #[test]
+    fn sanitize_workspace_name_trims_but_preserves_inner_chars() {
+        // Workspace names are user-visible labels; we only trim outer
+        // whitespace. Spaces, dashes, mixed case all survive — slug
+        // hygiene happens at MCP-service-ID derivation time, not here.
+        assert_eq!(sanitize_workspace_name("  jats  "), "jats");
+        assert_eq!(sanitize_workspace_name("My Workspace"), "My Workspace");
+        assert_eq!(sanitize_workspace_name("workspace-11100"), "workspace-11100");
+    }
+
+    #[test]
+    fn read_projects_migrates_assigned_port_to_workspace_name() {
+        let dir = unique_tempdir("migrate-port");
+        let path = dir.join("projects.json");
+
+        // v0.10.3-shape projects.json: assignedPort set, workspaceName missing.
+        let v0_10_3 = r#"{
+          "version": 1,
+          "projects": [
+            {
+              "id": "p1",
+              "name": "Service A",
+              "projectPath": "/projects/a",
+              "assignedPort": 11100
+            },
+            {
+              "id": "p2",
+              "name": "Service B",
+              "projectPath": "/projects/b",
+              "assignedPort": 11102
+            }
+          ]
+        }"#;
+        fs::write(&path, v0_10_3).unwrap();
+
+        let parsed = read_projects(&path).expect("migration must succeed");
+        assert_eq!(parsed.projects.len(), 2);
+        assert_eq!(parsed.projects[0].workspace_name, "workspace-11100");
+        assert_eq!(parsed.projects[1].workspace_name, "workspace-11102");
+
+        // Migrated data is written back so the next read is clean.
+        let reread = read_projects(&path).unwrap();
+        assert_eq!(reread.projects[0].workspace_name, "workspace-11100");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_projects_zero_port_falls_back_to_workspace_default() {
+        let dir = unique_tempdir("zero-port");
+        let path = dir.join("projects.json");
+
+        // No assignedPort, no workspaceName — pre-port-allocation legacy.
+        let raw = r#"{
+          "version": 1,
+          "projects": [
+            { "id": "p1", "name": "Foo", "projectPath": "/projects/foo" }
+          ]
+        }"#;
+        fs::write(&path, raw).unwrap();
+
+        let parsed = read_projects(&path).unwrap();
+        assert_eq!(parsed.projects[0].workspace_name, "workspace-default");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_projects_keeps_existing_workspace_name() {
+        let dir = unique_tempdir("keep-ws");
+        let path = dir.join("projects.json");
+
+        // Already-migrated v0.10.4 record. Migration must not overwrite.
+        let raw = r#"{
+          "version": 1,
+          "projects": [
+            {
+              "id": "p1",
+              "name": "X",
+              "projectPath": "/projects/x",
+              "workspaceName": "jats",
+              "assignedPort": 11100
+            }
+          ]
+        }"#;
+        fs::write(&path, raw).unwrap();
+
+        let parsed = read_projects(&path).unwrap();
+        assert_eq!(parsed.projects[0].workspace_name, "jats");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn config_store_add_project_uses_workspace_name() {
+        let dir = unique_tempdir("add");
+        let paths = paths_in(&dir);
+        // Write empty projects.json + settings.json so ConfigStore::new path works
+        // — but we'll bypass that and build the store directly to avoid the
+        // detect()-based AppPaths the public constructor uses.
+        let store = ConfigStore {
+            paths: paths.clone(),
+            projects: Mutex::new(ProjectsFile { version: 1, projects: Vec::new() }),
+            settings: Mutex::new(ManagerSettings::default_for_paths(&paths)),
+        };
+
+        let project = store
+            .add_project(AddProjectInput {
+                name: "Alpha".into(),
+                project_path: "/projects/alpha".into(),
+                workspace_name: "jats".into(),
+            })
+            .expect("add_project should succeed");
+
+        assert_eq!(project.workspace_name, "jats");
+        assert_eq!(project.assigned_port, 0);
+
+        // Empty workspace_name → "workspace-default".
+        let p2 = store
+            .add_project(AddProjectInput {
+                name: "Beta".into(),
+                project_path: "/projects/beta".into(),
+                workspace_name: String::new(),
+            })
+            .unwrap();
+        assert_eq!(p2.workspace_name, "workspace-default");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn config_store_set_project_workspace_moves_record() {
+        let dir = unique_tempdir("set-ws");
+        let paths = paths_in(&dir);
+        let store = ConfigStore {
+            paths: paths.clone(),
+            projects: Mutex::new(ProjectsFile { version: 1, projects: Vec::new() }),
+            settings: Mutex::new(ManagerSettings::default_for_paths(&paths)),
+        };
+
+        let project = store
+            .add_project(AddProjectInput {
+                name: "Alpha".into(),
+                project_path: "/projects/alpha".into(),
+                workspace_name: "jats".into(),
+            })
+            .unwrap();
+
+        let updated = store
+            .set_project_workspace(&project.id, "orb".into())
+            .expect("rename should succeed");
+
+        assert_eq!(updated.workspace_name, "orb");
+        // Persisted to disk.
+        let reread = read_projects(&paths.projects_file).unwrap();
+        assert_eq!(reread.projects[0].workspace_name, "orb");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn config_store_rename_workspace_bulk_updates_matching_records() {
+        let dir = unique_tempdir("rename-ws");
+        let paths = paths_in(&dir);
+        let store = ConfigStore {
+            paths: paths.clone(),
+            projects: Mutex::new(ProjectsFile { version: 1, projects: Vec::new() }),
+            settings: Mutex::new(ManagerSettings::default_for_paths(&paths)),
+        };
+
+        store.add_project(AddProjectInput {
+            name: "A".into(),
+            project_path: "/p/a".into(),
+            workspace_name: "jats".into(),
+        }).unwrap();
+        store.add_project(AddProjectInput {
+            name: "B".into(),
+            project_path: "/p/b".into(),
+            workspace_name: "jats".into(),
+        }).unwrap();
+        store.add_project(AddProjectInput {
+            name: "C".into(),
+            project_path: "/p/c".into(),
+            workspace_name: "orb".into(),
+        }).unwrap();
+
+        let count = store
+            .rename_workspace("jats", "jats-2".into())
+            .expect("rename should succeed");
+        assert_eq!(count, 2);
+
+        let projects = store.list_projects();
+        let by_name: std::collections::HashMap<String, String> = projects
+            .iter()
+            .map(|p| (p.name.clone(), p.workspace_name.clone()))
+            .collect();
+        assert_eq!(by_name.get("A").unwrap(), "jats-2");
+        assert_eq!(by_name.get("B").unwrap(), "jats-2");
+        assert_eq!(by_name.get("C").unwrap(), "orb");
+
+        // Renaming to the same name is a no-op (returns 0 changes).
+        let count2 = store.rename_workspace("orb", "orb".into()).unwrap();
+        assert_eq!(count2, 0);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn config_store_workspace_names_in_use_returns_distinct_sorted() {
+        let dir = unique_tempdir("names-in-use");
+        let paths = paths_in(&dir);
+        let store = ConfigStore {
+            paths: paths.clone(),
+            projects: Mutex::new(ProjectsFile { version: 1, projects: Vec::new() }),
+            settings: Mutex::new(ManagerSettings::default_for_paths(&paths)),
+        };
+
+        // Three projects across two workspaces; alphabetical "jats" before "orb".
+        store.add_project(AddProjectInput {
+            name: "X".into(),
+            project_path: "/p/x".into(),
+            workspace_name: "orb".into(),
+        }).unwrap();
+        store.add_project(AddProjectInput {
+            name: "Y".into(),
+            project_path: "/p/y".into(),
+            workspace_name: "jats".into(),
+        }).unwrap();
+        store.add_project(AddProjectInput {
+            name: "Z".into(),
+            project_path: "/p/z".into(),
+            workspace_name: "jats".into(),
+        }).unwrap();
+
+        let names = store.workspace_names_in_use();
+        assert_eq!(names, vec!["jats".to_string(), "orb".to_string()]);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

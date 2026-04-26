@@ -2613,4 +2613,63 @@ mod tests {
         let error = extract_tool_entries(&response).expect_err("error payload should fail");
         assert!(error.contains("Method not found"));
     }
+
+    // ============================================================
+    // Sprint 10 v0.10.4: workspace flow tests.
+    // ============================================================
+
+    #[test]
+    fn mcp_server_id_for_workspace_simple_name() {
+        let id = mcp_server_id_for_workspace("jats");
+        assert_eq!(id, "jl-jats");
+    }
+
+    #[test]
+    fn mcp_server_id_for_workspace_normalizes_special_chars() {
+        // mcp_label_slug lowercases and replaces non-alphanumerics with `-`
+        // (collapsing consecutive). The exact slug shape is internal but
+        // the result must be a valid Cursor server id (only [a-z0-9-_]).
+        let id = mcp_server_id_for_workspace("My Workspace!");
+        assert!(id.starts_with("jl-"));
+        assert!(id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+    }
+
+    #[test]
+    fn mcp_server_id_for_workspace_long_name_fits_cursor_budget() {
+        // Cursor's combined-id cap is around 59-60 chars. Whatever the
+        // workspace name length, the produced id must fit within that
+        // cap so the longest tool name still passes.
+        let long = "a".repeat(200);
+        let id = mcp_server_id_for_workspace(&long);
+        assert!(id.starts_with("jl-"));
+        assert!(id.len() <= max_mcp_server_id_len_for_cursor());
+    }
+
+    #[test]
+    fn mcp_server_id_for_workspace_empty_falls_back_to_hash() {
+        // Pure whitespace produces an empty slug after sanitization;
+        // mcp_server_id_for_workspace falls back to a deterministic hash
+        // suffix so the id is still unique-ish and parseable.
+        let id = mcp_server_id_for_workspace("   ");
+        assert!(id.starts_with("jl-"));
+        assert!(id.len() > "jl-".len(), "empty name must yield a hash-suffixed id, got '{id}'");
+    }
+
+    #[test]
+    fn mcp_server_id_for_workspace_is_deterministic() {
+        // Same input → same id, run-to-run. Important so mcp.json diffs
+        // stay minimal across reloads.
+        let a = mcp_server_id_for_workspace("strategies-orb");
+        let b = mcp_server_id_for_workspace("strategies-orb");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn mcp_server_id_for_workspace_distinguishes_distinct_names() {
+        // Two different workspace names → two different ids. Otherwise
+        // mcp.json would collapse independent workspaces into one entry.
+        let a = mcp_server_id_for_workspace("jats");
+        let b = mcp_server_id_for_workspace("orb");
+        assert_ne!(a, b);
+    }
 }
