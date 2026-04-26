@@ -207,8 +207,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_dashboard,
             commands::add_project,
-            commands::suggest_next_port,
-            commands::update_project_port,
+            commands::set_project_workspace,
+            commands::rename_workspace,
             commands::delete_project,
             commands::start_all_runtimes,
             commands::stop_all_runtimes,

@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     sync::Mutex,
@@ -48,14 +47,6 @@ fn default_data_root() -> String {
 
 fn default_global_runtime_source() -> RuntimeSource {
     RuntimeSource::Managed
-}
-
-fn default_port_range_start() -> u16 {
-    11100
-}
-
-fn default_port_range_end() -> u16 {
-    11199
 }
 
 fn default_use_system_tray() -> bool {
@@ -159,10 +150,6 @@ pub struct ManagerSettings {
     pub data_root: String,
     #[serde(default = "default_global_runtime_source")]
     pub global_runtime_source: RuntimeSource,
-    #[serde(default = "default_port_range_start")]
-    pub port_range_start: u16,
-    #[serde(default = "default_port_range_end")]
-    pub port_range_end: u16,
     #[serde(default = "default_use_system_tray")]
     pub use_system_tray: bool,
     #[serde(default = "default_mcp_client_paths")]
@@ -175,19 +162,6 @@ pub struct ManagerSettings {
     pub deploy_targets: DeployTargetFlags,
     #[serde(default = "default_release_repo")]
     pub release_repo: String,
-    /// Sprint 10: opt-in single-workspace mode. When true, the manager
-    /// spawns one javalens process per unique `assigned_port` and loads
-    /// every project on that port into the shared in-memory Eclipse
-    /// workspace via MCP `add_project` calls. Default `false` for v0.10.x;
-    /// Sprint 11 (v0.11.0) will flip the default to `true`.
-    #[serde(default)]
-    pub single_workspace_mode: bool,
-    /// Sprint 10: optional per-port workspace label. Drives the MCP
-    /// service ID slug (`jl-<port>-<label>`) and the grouped Dashboard
-    /// header in single-workspace mode. Falls back to the lexicographically
-    /// first project's slug when unset.
-    #[serde(default)]
-    pub workspace_labels: BTreeMap<u16, String>,
     pub last_release_check: Option<String>,
     pub last_seen_latest_version: Option<String>,
 }
@@ -217,16 +191,12 @@ impl ManagerSettings {
             manual_fallback_jar_path: None,
             data_root: display_path(&paths.default_data_root),
             global_runtime_source: RuntimeSource::Managed,
-            port_range_start: default_port_range_start(),
-            port_range_end: default_port_range_end(),
             use_system_tray: default_use_system_tray(),
             mcp_client_paths: detect_default_mcp_client_paths(),
             mcp_merge_mode: default_mcp_merge_mode(),
             mcp_backup_before_write: default_mcp_backup_before_write(),
             deploy_targets: default_deploy_targets(),
             release_repo: default_release_repo(),
-            single_workspace_mode: false,
-            workspace_labels: BTreeMap::new(),
             last_release_check: None,
             last_seen_latest_version: None,
         }
@@ -261,12 +231,27 @@ impl RuntimeSource {
 }
 
 /// Information about a registered Java project.
+///
+/// Sprint 10 v0.10.4: `workspace_name` identifies the logical workspace this
+/// project belongs to. Multiple projects sharing a `workspace_name` run as
+/// one MCP service (one javalens process per workspace). The legacy
+/// `assigned_port` field is preserved on disk for one release cycle to
+/// support migration from v0.10.3-format projects.json — at runtime it is
+/// ignored. To be removed in Sprint 11.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectRecord {
     pub id: String,
     pub name: String,
     pub project_path: String,
+    /// Logical workspace this project belongs to. Required from v0.10.4 on.
+    /// On v0.10.3 → v0.10.4 migration the manager derives this from
+    /// `assigned_port` if missing (e.g. `"workspace-11100"`).
+    #[serde(default)]
+    pub workspace_name: String,
+    /// Legacy v0.10.3 field. Kept on disk for one release cycle to support
+    /// migration of existing projects.json files. Removed in Sprint 11.
+    #[serde(default)]
     pub assigned_port: u16,
 }
 
@@ -276,7 +261,10 @@ pub struct ProjectRecord {
 pub struct AddProjectInput {
     pub name: String,
     pub project_path: String,
-    pub assigned_port: Option<u16>,
+    /// The logical workspace to add this project to. If empty/missing,
+    /// a default `"workspace-default"` is used.
+    #[serde(default)]
+    pub workspace_name: String,
 }
 
 /// Input data for updating the manager settings.
@@ -287,8 +275,6 @@ pub struct UpdateSettingsInput {
     pub auto_check_for_updates: bool,
     pub data_root: String,
     pub global_runtime_source: RuntimeSource,
-    pub port_range_start: u16,
-    pub port_range_end: u16,
     pub use_system_tray: bool,
     pub mcp_client_paths: McpClientPaths,
     pub mcp_merge_mode: McpMergeMode,
@@ -298,11 +284,6 @@ pub struct UpdateSettingsInput {
     /// Lets older frontend builds save settings without resetting this field.
     #[serde(default)]
     pub release_repo: Option<String>,
-    /// Sprint 10: optional toggle for single-workspace mode. When omitted,
-    /// the current setting is preserved (so older frontend builds saving
-    /// settings don't accidentally reset it).
-    #[serde(default)]
-    pub single_workspace_mode: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -465,9 +446,10 @@ impl ConfigStore {
     pub fn add_project(&self, input: AddProjectInput) -> Result<ProjectRecord, String> {
         validate_non_empty("name", &input.name)?;
         validate_non_empty("projectPath", &input.project_path)?;
-        let assigned_port = input
-            .assigned_port
-            .ok_or("assignedPort must be set before adding project")?;
+
+        // Sprint 10 v0.10.4: workspace_name is the grouping identifier.
+        // Empty input falls back to "workspace-default".
+        let workspace_name = sanitize_workspace_name(&input.workspace_name);
 
         let project_slug = slugify(&input.name);
         let project_id = format!("{project_slug}-{}", current_timestamp_millis());
@@ -476,7 +458,8 @@ impl ConfigStore {
             id: project_id,
             name: input.name.trim().to_string(),
             project_path: input.project_path.trim().to_string(),
-            assigned_port,
+            workspace_name,
+            assigned_port: 0,
         };
 
         let mut projects = self.projects.lock().expect("projects mutex poisoned");
@@ -495,21 +478,51 @@ impl ConfigStore {
         Ok(project)
     }
 
-    pub fn update_project_port(
+    /// Sprint 10 v0.10.4: move a project to a different workspace.
+    /// Replaces the legacy `update_project_port` (port concept removed).
+    pub fn set_project_workspace(
         &self,
         project_id: &str,
-        assigned_port: u16,
+        workspace_name: String,
     ) -> Result<ProjectRecord, String> {
+        let sanitized = sanitize_workspace_name(&workspace_name);
         let mut projects = self.projects.lock().expect("projects mutex poisoned");
         let project = projects
             .projects
             .iter_mut()
             .find(|project| project.id == project_id)
             .ok_or_else(|| format!("Unknown project id: {project_id}"))?;
-        project.assigned_port = assigned_port;
+        project.workspace_name = sanitized;
         let updated = project.clone();
         write_json(&self.paths.projects_file, &*projects)?;
         Ok(updated)
+    }
+
+    /// Sprint 10 v0.10.4: rename a workspace. Updates every ProjectRecord
+    /// whose `workspace_name` matches `old_name` to `new_name`. The caller
+    /// is responsible for moving the JDT data dir on disk and updating
+    /// mcp.json (workspace name appears in the MCP service ID).
+    pub fn rename_workspace(
+        &self,
+        old_name: &str,
+        new_name: String,
+    ) -> Result<usize, String> {
+        let sanitized = sanitize_workspace_name(&new_name);
+        if sanitized == old_name {
+            return Ok(0);
+        }
+        let mut projects = self.projects.lock().expect("projects mutex poisoned");
+        let mut count = 0usize;
+        for project in projects.projects.iter_mut() {
+            if project.workspace_name == old_name {
+                project.workspace_name = sanitized.clone();
+                count += 1;
+            }
+        }
+        if count > 0 {
+            write_json(&self.paths.projects_file, &*projects)?;
+        }
+        Ok(count)
     }
 
     pub fn delete_project(&self, project_id: &str) -> Result<ProjectRecord, String> {
@@ -524,15 +537,21 @@ impl ConfigStore {
         Ok(removed)
     }
 
-    pub fn used_ports(&self, excluding_project_id: Option<&str>) -> Vec<u16> {
-        self.projects
+    /// Sprint 10 v0.10.4: distinct workspace names currently in use across
+    /// all loaded projects, sorted. Replaces the legacy `used_ports`.
+    pub fn workspace_names_in_use(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .projects
             .lock()
             .expect("projects mutex poisoned")
             .projects
             .iter()
-            .filter(|project| excluding_project_id.map_or(true, |id| project.id != id))
-            .map(|project| project.assigned_port)
-            .collect()
+            .map(|project| project.workspace_name.clone())
+            .filter(|name| !name.is_empty())
+            .collect();
+        names.sort();
+        names.dedup();
+        names
     }
 
     pub fn get_settings(&self) -> ManagerSettings {
@@ -554,9 +573,6 @@ impl ConfigStore {
 
         validate_runtime_source(&input.global_runtime_source)?;
         settings.global_runtime_source = input.global_runtime_source;
-        validate_port_range(input.port_range_start, input.port_range_end)?;
-        settings.port_range_start = input.port_range_start;
-        settings.port_range_end = input.port_range_end;
         settings.use_system_tray = input.use_system_tray;
         settings.mcp_client_paths = sanitize_mcp_client_paths(input.mcp_client_paths);
         settings.mcp_merge_mode = input.mcp_merge_mode;
@@ -565,26 +581,7 @@ impl ConfigStore {
         if let Some(release_repo) = input.release_repo {
             settings.release_repo = sanitize_release_repo(release_repo)?;
         }
-        if let Some(single_workspace_mode) = input.single_workspace_mode {
-            settings.single_workspace_mode = single_workspace_mode;
-        }
 
-        write_json(&self.paths.settings_file, &*settings)?;
-        Ok(settings.clone())
-    }
-
-    /// Sprint 10: set or clear the friendly label for a workspace identified
-    /// by its port. Empty/blank label removes the entry (label falls back to
-    /// the lexicographically first project's slug). Used by the inline edit
-    /// in the grouped Dashboard header.
-    pub fn set_workspace_label(&self, port: u16, label: String) -> Result<ManagerSettings, String> {
-        let trimmed = label.trim();
-        let mut settings = self.settings.lock().expect("settings mutex poisoned");
-        if trimmed.is_empty() {
-            settings.workspace_labels.remove(&port);
-        } else {
-            settings.workspace_labels.insert(port, trimmed.to_string());
-        }
         write_json(&self.paths.settings_file, &*settings)?;
         Ok(settings.clone())
     }
@@ -621,14 +618,18 @@ fn validate_runtime_source(runtime_source: &RuntimeSource) -> Result<(), String>
     }
 }
 
-fn validate_port_range(start: u16, end: u16) -> Result<(), String> {
-    if start > end {
-        return Err("portRangeStart must be <= portRangeEnd".into());
+/// Sprint 10 v0.10.4: sanitize a workspace name. Empty/whitespace input
+/// becomes the special-case `"workspace-default"`; otherwise the input is
+/// trimmed (no other transformation — workspace names are user-visible
+/// labels and may contain spaces, dashes, etc. — slug-quality enforcement
+/// happens at MCP-service-ID derivation time, not here).
+pub fn sanitize_workspace_name(input: &str) -> String {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        "workspace-default".to_string()
+    } else {
+        trimmed.to_string()
     }
-    if start < 1024 {
-        return Err("portRangeStart must be >= 1024".into());
-    }
-    Ok(())
 }
 
 /// Validate and normalize a "<owner>/<repo>" GitHub release source string.
@@ -663,13 +664,31 @@ fn read_projects(path: &Path) -> Result<ProjectsFile, String> {
     let contents = fs::read_to_string(path)
         .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
 
-    if let Ok(projects) = serde_json::from_str::<ProjectsFile>(&contents) {
+    if let Ok(mut projects) = serde_json::from_str::<ProjectsFile>(&contents) {
+        // Sprint 10 v0.10.4 migration: derive workspace_name from the
+        // legacy assigned_port for v0.10.3-format projects.json files.
+        // Existing v0.10.4 records keep their workspace_name.
+        let mut migrated = false;
+        for project in projects.projects.iter_mut() {
+            if project.workspace_name.trim().is_empty() {
+                project.workspace_name = if project.assigned_port > 0 {
+                    format!("workspace-{}", project.assigned_port)
+                } else {
+                    "workspace-default".to_string()
+                };
+                migrated = true;
+            }
+        }
+        if migrated {
+            // Best-effort writeback so the next read sees clean data.
+            let _ = write_json(path, &projects);
+        }
         return Ok(projects);
     }
 
     let legacy = serde_json::from_str::<LegacyProjectsFile>(&contents)
         .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
-    Ok(ProjectsFile {
+    let projects = ProjectsFile {
         version: legacy.version.unwrap_or(1),
         projects: legacy
             .projects
@@ -678,10 +697,13 @@ fn read_projects(path: &Path) -> Result<ProjectsFile, String> {
                 id: legacy_project.id,
                 name: legacy_project.name,
                 project_path: legacy_project.project_path,
-                assigned_port: default_port_range_start(),
+                workspace_name: "workspace-default".to_string(),
+                assigned_port: 0,
             })
             .collect(),
-    })
+    };
+    let _ = write_json(path, &projects);
+    Ok(projects)
 }
 
 fn read_settings(path: &Path, paths: &AppPaths) -> Result<ManagerSettings, String> {
@@ -692,10 +714,6 @@ fn read_settings(path: &Path, paths: &AppPaths) -> Result<ManagerSettings, Strin
         .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
     if settings.data_root.trim().is_empty() {
         settings.data_root = display_path(&paths.default_data_root);
-    }
-    if validate_port_range(settings.port_range_start, settings.port_range_end).is_err() {
-        settings.port_range_start = default_port_range_start();
-        settings.port_range_end = default_port_range_end();
     }
     // One-shot migration: settings.json files written by v0.10.0 carry the
     // legacy upstream repo as the default value. Now that the fork is the

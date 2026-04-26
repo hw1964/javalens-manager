@@ -15,7 +15,6 @@ use std::{
     hash::{Hash, Hasher},
     fs,
     io::{BufRead, BufReader, Write},
-    net::TcpListener,
     path::{Path, PathBuf},
     process::{ChildStderr, ChildStdout, Command, Stdio},
     sync::{
@@ -37,7 +36,11 @@ pub struct ManagerDashboard {
     pub installed_runtime: Option<ManagedRuntimeRecord>,
     pub projects: Vec<ProjectRecord>,
     pub runtime_statuses: HashMap<String, RuntimeStatusRecord>,
-    pub suggested_port: Option<u16>,
+    /// Sprint 10 v0.10.4: A suggested workspace name for the next "Add
+    /// project" form submission. Surfaces an existing workspace if one is
+    /// loaded; otherwise `None` and the UI defaults to a fresh
+    /// "workspace-default".
+    pub suggested_workspace_name: Option<String>,
     pub services_inventory: ServicesInventory,
 }
 
@@ -50,12 +53,21 @@ pub struct WorkspaceProjectCandidate {
     pub kind: String,
 }
 
-/// Input for updating a project's assigned port.
+/// Sprint 10 v0.10.4: input for moving a project to a different workspace.
+/// Replaces the legacy `UpdateProjectPortInput` (port concept removed).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UpdateProjectPortInput {
+pub struct SetProjectWorkspaceInput {
     pub project_id: String,
-    pub assigned_port: u16,
+    pub workspace_name: String,
+}
+
+/// Sprint 10 v0.10.4: input for renaming a workspace.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameWorkspaceInput {
+    pub old_name: String,
+    pub new_name: String,
 }
 
 /// Input for importing projects from an IDE workspace.
@@ -64,6 +76,10 @@ pub struct UpdateProjectPortInput {
 pub struct WorkspaceImportInput {
     pub workspace_file: String,
     pub selected_paths: Vec<String>,
+    /// Sprint 10 v0.10.4: target workspace for the imported projects.
+    /// Empty/missing → "workspace-default".
+    #[serde(default)]
+    pub workspace_name: String,
 }
 
 /// Result of importing projects from a workspace.
@@ -219,37 +235,44 @@ impl ManagerService {
         self.build_dashboard(true)
     }
 
-    /// Suggests the next available port for a project.
-    pub fn suggest_next_port(&self) -> Result<u16, String> {
-        let settings = self.config_store.get_settings();
-        self.suggest_next_port_for(&settings, None)
-            .ok_or("No free port available in configured range".into())
-    }
-
-    /// Adds a new project to the manager.
-    pub fn add_project(&self, input: AddProjectInput) -> Result<ProjectRecord, String> {
-        let settings = self.config_store.get_settings();
-        let assigned_port = self.allocate_port(&settings, None, input.assigned_port)?;
-        self.config_store.add_project(AddProjectInput {
-            name: input.name,
-            project_path: input.project_path,
-            assigned_port: Some(assigned_port),
-        })
-    }
-
-    /// Updates the assigned port for an existing project.
-    pub fn update_project_port(
-        &self,
-        input: UpdateProjectPortInput,
-    ) -> Result<ManagerDashboard, String> {
-        let settings = self.config_store.get_settings();
-        let assigned_port = self.allocate_port(
-            &settings,
-            Some(input.project_id.as_str()),
-            Some(input.assigned_port),
-        )?;
+    /// Sprint 10 v0.10.4: suggest a default workspace name for the next
+    /// "Add project" form. Returns the most recent existing workspace if
+    /// any is configured, else `None` (UI then defaults to a fresh name).
+    pub fn suggest_next_workspace_name(&self) -> Option<String> {
         self.config_store
-            .update_project_port(&input.project_id, assigned_port)?;
+            .workspace_names_in_use()
+            .into_iter()
+            .next()
+    }
+
+    /// Adds a new project to the manager. The project's workspace is
+    /// determined by `input.workspace_name`; empty input defaults to
+    /// `"workspace-default"`.
+    pub fn add_project(&self, input: AddProjectInput) -> Result<ProjectRecord, String> {
+        self.config_store.add_project(input)
+    }
+
+    /// Sprint 10 v0.10.4: move a project to a different workspace.
+    /// Replaces the legacy `update_project_port`.
+    pub fn set_project_workspace(
+        &self,
+        input: SetProjectWorkspaceInput,
+    ) -> Result<ManagerDashboard, String> {
+        self.config_store
+            .set_project_workspace(&input.project_id, input.workspace_name)?;
+        self.load_dashboard()
+    }
+
+    /// Sprint 10 v0.10.4: rename a workspace. Updates every project's
+    /// `workspace_name` matching `old_name` to `new_name`. The MCP service
+    /// ID derives from the workspace name, so the next deploy emits a new
+    /// mcp.json entry.
+    pub fn rename_workspace(
+        &self,
+        input: RenameWorkspaceInput,
+    ) -> Result<ManagerDashboard, String> {
+        self.config_store
+            .rename_workspace(&input.old_name, input.new_name)?;
         self.load_dashboard()
     }
 
@@ -480,7 +503,7 @@ impl ManagerService {
         let projects = self.config_store.list_projects();
         let runtime_statuses =
             self.collect_runtime_statuses(&projects, &settings, installed_runtime.as_ref());
-        let suggested_port = self.suggest_next_port_for(&settings, None);
+        let suggested_workspace_name = self.suggest_next_workspace_name();
         let services_inventory = self.get_services_inventory_with(installed_runtime.as_ref());
 
         Ok(ManagerDashboard {
@@ -490,7 +513,7 @@ impl ManagerService {
             installed_runtime,
             projects,
             runtime_statuses,
-            suggested_port,
+            suggested_workspace_name,
             services_inventory,
         })
     }
@@ -640,13 +663,18 @@ impl ManagerService {
         Ok(filtered)
     }
 
-    /// Imports selected projects from a workspace.
+    /// Imports selected projects from a workspace into a target workspace.
+    /// Sprint 10 v0.10.4: all imported projects share a single
+    /// `workspace_name` from `input.workspace_name` (or `"workspace-default"`
+    /// if empty). Replaces the per-project port allocation that the legacy
+    /// flow performed.
     pub fn import_workspace_projects(
         &self,
         input: WorkspaceImportInput,
     ) -> Result<WorkspaceImportResult, String> {
         let candidates = self.discover_workspace_projects(&input.workspace_file)?;
         let selected: HashSet<String> = input.selected_paths.into_iter().collect();
+        let target_workspace = input.workspace_name.clone();
         let mut added = Vec::new();
         let mut skipped = Vec::new();
 
@@ -657,7 +685,7 @@ impl ManagerService {
             let result = self.add_project(AddProjectInput {
                 name: candidate.name.clone(),
                 project_path: candidate.project_path.clone(),
-                assigned_port: None,
+                workspace_name: target_workspace.clone(),
             });
             match result {
                 Ok(project) => added.push(project),
@@ -793,54 +821,6 @@ impl ManagerService {
             settings.global_runtime_source.label(),
             detail,
         )
-    }
-
-    fn allocate_port(
-        &self,
-        settings: &ManagerSettings,
-        excluding_project_id: Option<&str>,
-        preferred: Option<u16>,
-    ) -> Result<u16, String> {
-        let used: HashSet<u16> = self
-            .config_store
-            .used_ports(excluding_project_id)
-            .into_iter()
-            .collect();
-
-        let in_range =
-            |port: u16| port >= settings.port_range_start && port <= settings.port_range_end;
-        let available =
-            |port: u16| in_range(port) && !used.contains(&port) && is_port_bind_available(port);
-
-        if let Some(port) = preferred {
-            if !in_range(port) {
-                return Err(format!(
-                    "Port {port} is outside permitted range {}-{}",
-                    settings.port_range_start, settings.port_range_end
-                ));
-            }
-            if !available(port) {
-                return Err(format!("Port {port} is already in use or unavailable"));
-            }
-            return Ok(port);
-        }
-
-        self.suggest_next_port_for(settings, excluding_project_id)
-            .ok_or_else(|| "No free port available in configured range".into())
-    }
-
-    fn suggest_next_port_for(
-        &self,
-        settings: &ManagerSettings,
-        excluding_project_id: Option<&str>,
-    ) -> Option<u16> {
-        let used: HashSet<u16> = self
-            .config_store
-            .used_ports(excluding_project_id)
-            .into_iter()
-            .collect();
-        (settings.port_range_start..=settings.port_range_end)
-            .find(|port| !used.contains(port) && is_port_bind_available(*port))
     }
 
     fn build_deploy_servers(
@@ -2331,10 +2311,6 @@ fn remove_managed_rule_block(
 
 fn latest_backup_path(_path: &str) -> Option<String> {
     None
-}
-
-fn is_port_bind_available(port: u16) -> bool {
-    TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
 #[cfg(test)]

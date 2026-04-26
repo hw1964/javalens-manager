@@ -2,8 +2,8 @@ use crate::{
     config::{AddProjectInput, ProjectRecord, UpdateSettingsInput},
     manager_service::{
         CleanupSummary, DeployToAgentsInput, DeployToAgentsResult, ManagerDashboard,
-        ServiceProbeResult, ServicesInventory, UpdateProjectPortInput, WorkspaceImportInput,
-        WorkspaceImportResult, WorkspaceProjectCandidate,
+        RenameWorkspaceInput, ServiceProbeResult, ServicesInventory, SetProjectWorkspaceInput,
+        WorkspaceImportInput, WorkspaceImportResult, WorkspaceProjectCandidate,
     },
     runtime_manager::RuntimeStatusRecord,
     AppState,
@@ -41,16 +41,19 @@ pub fn add_project(
 }
 
 #[tauri::command]
-pub fn suggest_next_port(state: State<'_, AppState>) -> Result<u16, String> {
-    state.manager_service.suggest_next_port()
+pub fn set_project_workspace(
+    state: State<'_, AppState>,
+    input: SetProjectWorkspaceInput,
+) -> Result<ManagerDashboard, String> {
+    state.manager_service.set_project_workspace(input)
 }
 
 #[tauri::command]
-pub fn update_project_port(
+pub fn rename_workspace(
     state: State<'_, AppState>,
-    input: UpdateProjectPortInput,
+    input: RenameWorkspaceInput,
 ) -> Result<ManagerDashboard, String> {
-    state.manager_service.update_project_port(input)
+    state.manager_service.rename_workspace(input)
 }
 
 #[tauri::command]
