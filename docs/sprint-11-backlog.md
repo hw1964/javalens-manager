@@ -380,6 +380,7 @@ Tag the manager (e.g., `v0.11.0`) targeting fork `v1.4.0`. Update README and Hel
 
 ## Out of scope (deferred)
 
+- **Remove legacy per-project spawn code path** — the `single_workspace_mode=false` branch in `javalens-manager/src-tauri/src/runtime_manager.rs` (and the per-project `mcp.json` generation in `manager_service.rs::build_client_mcp_json`) is kept in v1.4.0 for back-compat after Phase F flips the default to `true`. **Target removal: v1.5.0 / Sprint 12, after v1.4.0 has soaked one release cycle** with no regression reports. Captured here from the original plan's Phase 7 ("Decision points") which named this cleanup but didn't pick a release target.
 - **External PDE target-platform expansion.** Bundling `org.eclipse.pde.core` + friends (~30 plugins, ~5–10 MB install size) and using `TargetPlatformService` to expand `Require-Bundle` against external `.target` files or an installed Eclipse install. Bigger effort. Workspace bundle pool covers the inter-workspace case which is the dominant case for the user's projects (JATS bundles all live together). Defer until external deps actually become a blocker.
 - **Bazel improvements.** Today's Bazel handler walks for BUILD files + jars in `bazel-{bin,out}`. Not a priority for current user projects.
 - **Multi-language indexing (Kotlin, Scala).** JDT does some Kotlin via plugins, but full Kotlin/Scala source indexing is out of scope.
