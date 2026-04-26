@@ -26,20 +26,28 @@ The Dashboard is split into three areas: a **left column** for adding projects a
 
 *Main Dashboard: project form and workspace import (left), managed projects and deploy toolbar (right), selected project status (bottom). Layout may stack on narrower windows.*
 
+### Workspaces (Sprint 10 / v0.10.4)
+
+A **workspace** is a named group of projects that the manager loads into **one shared JavaLens process**. Multiple projects sharing a workspace name run as one MCP service — the agent sees a single service with the combined symbol set, no matter how many projects are inside. Add or remove a project from a workspace and the running JavaLens picks up the change within ~1 second through a `workspace.json` file watcher; no MCP-client restart, no agent session reload.
+
+Typical sizing: 1–3 active workspaces concurrently. A "big-task" workspace (e.g. JATS with 12 OSGi bundles) is a good fit; a one-off project is also fine — just give it its own workspace name.
+
+The workspace concept replaces the v0.10.3 per-project port (no more port range, no per-project port allocation, no port conflicts). Existing `assignedPort` values from v0.10.3 auto-migrate on first launch into default workspace names like `workspace-11100`; rename them via the **Move…** button on a project row.
+
 ### Register Project
 
-1. **Name** — Required. When you **Browse** for a folder, the name is filled from that folder’s last path segment (you can edit it). The placeholder reminds you it defaults from the folder.
+1. **Name** — Required. When you **Browse** for a folder, the name is filled from that folder’s last path segment (you can edit it).
 2. **Project path** — The root directory of a Java/Maven/Gradle (or Eclipse PDE) project. Use **Browse** to pick a folder.
-3. **Assigned port** — Each JavaLens instance for this project listens on this port. The manager suggests the next free port in your **permitted range** (see Settings) and checks for conflicts.
-4. **Save project** — Registers the project; it then appears in **Managed Projects**.
+3. **Workspace** — Pick an existing workspace from the dropdown (joins it) or choose **New workspace…** and type a name. Multiple projects can share one workspace name.
+4. **Save project** — Registers the project. The manager writes/updates the workspace's `workspace.json` so any running JavaLens for that workspace picks up the new project immediately.
 
 ### Import VSCode Workspace
 
-Choose a `.code-workspace` file (**Browse**), then **Discover** to list Maven/Gradle and Eclipse/PDE Java projects. Tick the rows you want and click **Import selected** to register them in bulk. Use this when one workspace wraps many repos.
+Choose a `.code-workspace` file (**Browse**), then **Discover** to list Maven/Gradle and Eclipse/PDE Java projects. Tick the rows you want, set the **Workspace** (above) to the target workspace for the bulk import, and click **Import selected**. All imported projects join the same workspace.
 
 ### Managed Projects
 
-The list shows every registered project: path, assigned port (with **Set** to change it), and whether JavaLens is **RUNNING** or stopped. **Start**, **Stop**, and **Delete** apply to one row. At the top, **Start all**, **Stop all**, and **Delete all** act on every project—use **Delete** carefully; it removes the registration from the manager.
+The list shows every registered project: path, **workspace name** (with **Move…** to reassign a project to another workspace), and whether the workspace's JavaLens is **RUNNING** or stopped. **Start**, **Stop**, and **Delete** apply to one row. **Stop** removes the project from its workspace's running JavaLens via the file watcher; the workspace process keeps running for any remaining members and is killed only when the last project leaves. At the top, **Start all** and **Stop all** act per workspace; **Delete all** removes every registered project (use carefully).
 
 The summary line (totals and “all running” style summary) gives you a quick health read across projects.
 
@@ -58,7 +66,7 @@ Clicking any of these opens a **target picker**: check **Cursor**, **Claude**, *
 
 ### Selected Project Status
 
-When you select a row in **Managed Projects**, the bottom panel shows **Name**, **Project path**, **Assigned port**, process id (**PID**) if running, and **Phase / Health** text from the runtime. Use **Refresh** on that panel if you want to re-query status without switching views.
+When you select a row in **Managed Projects**, the bottom panel shows **Name**, **Project path**, **Workspace**, process id (**PID**) of the workspace's JavaLens process if running, and **Phase / Health** text from the runtime. Multiple projects in the same workspace share a PID. Use **Refresh** on that panel if you want to re-query status without switching views.
 
 ---
 
