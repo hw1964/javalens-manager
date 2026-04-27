@@ -3,6 +3,7 @@
   import { listen } from "@tauri-apps/api/event";
   import ProjectForm from "./lib/components/ProjectForm.svelte";
   import ProjectList from "./lib/components/ProjectList.svelte";
+  import WorkspaceList from "./lib/components/WorkspaceList.svelte";
   import RuntimeSettings from "./lib/components/RuntimeSettings.svelte";
   import HelpView from "./lib/components/HelpView.svelte";
   import { createAppStore } from "./lib/stores/app";
@@ -21,6 +22,11 @@
   const SPLITTER_WIDTH = 12;
 
   let currentView: "dashboard" | "settings" | "help" = "dashboard";
+  /** Sprint 10 v0.10.4: which workspace the Register Project / Import
+   * forms add to. Owned at App.svelte so the Workspaces card and the
+   * forms stay in sync. Defaults to the first existing workspace if
+   * one exists, else empty (prompts the user to create one). */
+  let activeWorkspaceName: string = "";
   let leftPanelWidth = 320;
   let isDraggingSplitter = false;
   let isCompactLayout = false;
@@ -32,6 +38,16 @@
   let unlistenQuitRequested: (() => void) | undefined;
 
   $: selectedProject = $appStore.projects?.find((project) => project.id === $appStore.selectedProjectId);
+  $: existingWorkspaceNames = Array.from(new Set(($appStore.projects ?? []).map((p) => p.workspaceName))).sort();
+  // Default the active workspace once we have data: prefer the manager's
+  // suggestion (most recent), else the first existing, else stays empty.
+  $: if (!activeWorkspaceName) {
+    if ($appStore.suggestedWorkspaceName) {
+      activeWorkspaceName = $appStore.suggestedWorkspaceName;
+    } else if (existingWorkspaceNames.length > 0) {
+      activeWorkspaceName = existingWorkspaceNames[0];
+    }
+  }
   $: selectedStatus = selectedProject
     ? $appStore.runtimeStatuses?.[selectedProject.id]
     : undefined;
@@ -59,6 +75,14 @@
       }`;
     }
     return `${prefix}JavaLens runtime not downloaded`;
+  })();
+  // Sprint 10 v0.10.4: workspace + project count summary, shown next to
+  // the runtime subtitle so the user sees managed scope at a glance.
+  $: workspaceSubtitle = (() => {
+    const wsCount = existingWorkspaceNames.length;
+    const projCount = $appStore.projects?.length ?? 0;
+    if (wsCount === 0 && projCount === 0) return "no workspaces yet";
+    return `${wsCount} workspace${wsCount === 1 ? "" : "s"} · ${projCount} project${projCount === 1 ? "" : "s"}`;
   })();
   $: runtimeSubtitleTitle =
     runtimeSource?.kind === "localJar" && runtimeSource.jarPath?.trim()
@@ -275,6 +299,7 @@
       <div>
         <h1>javalens-manager</h1>
         <p class="title-subline muted" title={runtimeSubtitleTitle}>{runtimeSubtitle}</p>
+        <p class="title-subline muted">{workspaceSubtitle}</p>
       </div>
       <nav class="nav-tabs">
         <button
@@ -317,11 +342,17 @@
           class={`layout dashboard-layout ${isDraggingSplitter ? "is-resizing" : ""}`}
           style={`--left-panel-width: ${leftPanelWidth}px;`}
         >
-          <div class="dashboard-column">
-            <ProjectForm
+          <div class="dashboard-column dashboard-column-stack">
+            <WorkspaceList
+              activeWorkspaceName={activeWorkspaceName}
               disabled={$appStore.isBusy}
-              suggestedWorkspaceName={$appStore.suggestedWorkspaceName}
-              existingWorkspaceNames={Array.from(new Set(($appStore.projects ?? []).map((p) => p.workspaceName))).sort()}
+              onSelect={(name) => (activeWorkspaceName = name)}
+              projects={$appStore.projects ?? []}
+              runtimeStatuses={$appStore.runtimeStatuses ?? {}}
+            />
+            <ProjectForm
+              activeWorkspaceName={activeWorkspaceName}
+              disabled={$appStore.isBusy}
               on:submit={handleProjectSubmit}
               on:imported={() => appStore.load()}
             />

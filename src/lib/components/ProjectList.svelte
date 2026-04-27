@@ -434,19 +434,19 @@
   {:else}
     <div class="stack project-list-scroll">
       {#each groupedWorkspaces as workspace (workspace.name)}
-        {@const collapsed = collapsedWorkspaces[workspace.name] ?? false}
+        {@const collapsed = collapsedWorkspaces[workspace.name] ?? (workspace.phase === "stopped")}
         {@const isRenaming = renamingWorkspace === workspace.name}
         <article class="workspace-card">
           <header class="workspace-header">
             <div class="workspace-title">
               <button
                 aria-label={collapsed ? "Expand workspace" : "Collapse workspace"}
-                class="workspace-toggle"
+                class={`workspace-toggle ${collapsed ? "collapsed" : ""}`}
                 on:click={() => toggleWorkspaceCollapsed(workspace.name)}
                 title={collapsed ? "Expand" : "Collapse"}
                 type="button"
               >
-                {collapsed ? "▶" : "▼"}
+                <span class="workspace-toggle-icon">▾</span>
               </button>
               {#if isRenaming}
                 <input

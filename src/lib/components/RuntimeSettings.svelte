@@ -768,6 +768,7 @@
         </button>
       </div>
 
+      <div class="mcp-clients-scroll">
       {#each [
         ["cursor", "Cursor"],
         ["claude", "Claude"],
@@ -815,6 +816,7 @@
           </div>
         </div>
       {/each}
+      </div>
 
       <label class="field">
         <span>Merge mode</span>
