@@ -439,10 +439,15 @@
     cancelMove();
   }
 
-  function toggleWorkspaceCollapsed(name: string) {
+  function toggleWorkspaceCollapsed(name: string, currentlyCollapsed: boolean) {
+    // Flip the *visible* state, not the override map slot. Without
+    // this, the first click on a workspace that's collapsed only
+    // because of its default ("stopped" phase auto-collapses) just
+    // sets the override to the same value the default already
+    // computed — so nothing visibly changes until the second click.
     collapsedWorkspaces = {
       ...collapsedWorkspaces,
-      [name]: !collapsedWorkspaces[name]
+      [name]: !currentlyCollapsed
     };
   }
 
@@ -844,7 +849,7 @@
               <button
                 aria-label={collapsed ? "Expand workspace" : "Collapse workspace"}
                 class={`workspace-toggle ${collapsed ? "collapsed" : ""}`}
-                on:click={() => toggleWorkspaceCollapsed(workspace.name)}
+                on:click={() => toggleWorkspaceCollapsed(workspace.name, collapsed)}
                 title={collapsed ? "Expand" : "Collapse"}
                 type="button"
               >
