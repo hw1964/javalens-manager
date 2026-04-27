@@ -1,134 +1,168 @@
 # javalens-manager Help
 
-**javalens-manager** is a desktop companion for **JavaLens**: it registers Java projects on your machine, assigns each one a local port, starts and stops the JavaLens MCP runtime per project, and **deploys** MCP connection details into your AI tools (Cursor, Claude Desktop, Antigravity, IntelliJ-style configs).
+**javalens-manager** is the desktop control plane for **JavaLens** — it lets you create **named workspaces** of one-or-more Java projects, runs a single shared JavaLens MCP service per workspace, and **deploys** the connection details into your AI tools (Cursor, Claude Desktop, Antigravity, IntelliJ-style configs).
 
-Use **Dashboard** for day-to-day work, **Settings** for runtime paths and agent config files, and **Help** (this page) for orientation. Nothing here replaces your tools’ own documentation.
+The point: it gives your AI agents the same IDE-grade understanding of a Java codebase that a human developer gets in Eclipse or IntelliJ — call hierarchies, type hierarchies, references, refactorings, build classpath, JDK semantics. **Java agents on steroids.**
+
+Use **Dashboard** for day-to-day work, **Settings** for runtime paths and agent config files, and **Help** (this page) for orientation.
 
 ## Installation & Updates
 
-To install or update **javalens-manager** on Linux, you can use the provided installation script. This script automatically downloads the latest `.AppImage` from GitHub Releases, verifies its checksum, and sets up a desktop entry so the app appears in your system launcher.
-
-Run the following command in your terminal:
+To install or update **javalens-manager** on Linux, you can use the provided installation script. It downloads the latest `.AppImage` from GitHub Releases, verifies its checksum, and registers a desktop entry:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/hw1964/javalens-manager/main/install.sh | bash
 ```
 
-For more details or to download `.deb` packages manually, visit the [GitHub Releases page](https://github.com/hw1964/javalens-manager/releases).
+For `.deb` packages or other formats, see the [GitHub Releases page](https://github.com/hw1964/javalens-manager/releases).
+
+---
+
+## Workspaces — the core concept
+
+A **workspace** is a named group of Java projects loaded into one JavaLens process and exposed to agents as **one MCP service** (`jl-<workspace-name>`). The agent sees the combined symbol set of every project in the workspace; cross-project navigation, find-references, and (in fork v1.4.0+) refactorings work across the whole group.
+
+- **One workspace per cohesive task.** A bundle/multi-module application (e.g. JATS with 12 OSGi bundles), a monorepo, or a single project that you want isolated — each gets its own workspace.
+- **Live updates.** Add or remove a project from a workspace and the running JavaLens picks it up within ~1 second through a `workspace.json` file watcher. No MCP-client restart, no agent-session reload.
+- **No ports.** Workspaces are identified by name. There is no port range, no per-project port allocation, no port conflicts.
+- **Tool budget.** Each workspace contributes ~66 tools toward the agent's tool registration cap (Antigravity caps around 100). Stick to 1–3 active workspaces concurrently.
+- **Migration.** If you're upgrading from v0.10.3 or earlier, existing projects are auto-grouped into default workspaces named like `workspace-11100` (derived from the old `assignedPort`). Rename them through the Workspaces card or the workspace header.
 
 ---
 
 ## Dashboard
 
-The Dashboard is split into three areas: a **left column** for adding projects and workspace import, a **right column** for the managed project list and **Agent deploy**, and a **full-width strip** at the bottom for the **currently selected** project’s status.
-
 ![Dashboard overview](/help/dashboard.png)
 
-*Main Dashboard: project form and workspace import (left), managed projects and deploy toolbar (right), selected project status (bottom). Layout may stack on narrower windows.*
+*Workspaces card and Register Project on the left; grouped Managed Projects with the Agent deploy strip on the right; selected project status across the bottom.*
 
-### Workspaces (Sprint 10 / v0.10.4)
+The Dashboard splits into three areas:
+- **Left column** — the **Workspaces** card (pick / create / rename / delete) and the **Register Project / Import VSCode Workspace** forms below it.
+- **Right column** — the **Managed Projects** view grouped by workspace, the **Agent deploy** toolbar, and the bulk-action bar that appears when you select projects.
+- **Bottom strip** — full-width **Selected Project Status** for the row you most recently picked.
 
-A **workspace** is a named group of projects that the manager loads into **one shared JavaLens process**. Multiple projects sharing a workspace name run as one MCP service — the agent sees a single service with the combined symbol set, no matter how many projects are inside. Add or remove a project from a workspace and the running JavaLens picks up the change within ~1 second through a `workspace.json` file watcher; no MCP-client restart, no agent session reload.
+### Workspaces card (left)
 
-Typical sizing: 1–3 active workspaces concurrently. A "big-task" workspace (e.g. JATS with 12 OSGi bundles) is a good fit; a one-off project is also fine — just give it its own workspace name.
+Each row in the Workspaces card shows a workspace name, a colored **status lamp**, and the project count.
 
-The workspace concept replaces the v0.10.3 per-project port (no more port range, no per-project port allocation, no port conflicts). Existing `assignedPort` values from v0.10.3 auto-migrate on first launch into default workspace names like `workspace-11100`; rename them via the **Move…** button on a project row.
+- **Status lamp colors** — slate (stopped), amber (starting / mixed), emerald (running), coral (failed). The color reflects the workspace's aggregate runtime phase, derived from its members.
+- **Click** a row to make that workspace the **active** one — newly registered projects join it, and the Register Project / Import forms update their hint accordingly.
+- **+ New workspace…** — inline-creates an empty workspace. It pins until either you add a project to it or you delete it.
+- **Hover** a row to reveal the rename ✎ and delete ✕ icons. **Right-click** for a context menu with Rename / Delete.
 
 ### Register Project
 
-1. **Name** — Required. When you **Browse** for a folder, the name is filled from that folder’s last path segment (you can edit it).
-2. **Project path** — The root directory of a Java/Maven/Gradle (or Eclipse PDE) project. Use **Browse** to pick a folder.
-3. **Workspace** — Pick an existing workspace from the dropdown (joins it) or choose **New workspace…** and type a name. Multiple projects can share one workspace name.
-4. **Save project** — Registers the project. The manager writes/updates the workspace's `workspace.json` so any running JavaLens for that workspace picks up the new project immediately.
+1. **Name** — Required. Browsing for a folder fills this in from the folder's last segment (you can edit it).
+2. **Project path** — The root directory of a Java/Maven/Gradle (or Eclipse PDE) project.
+3. **Workspace** — Implicitly the active workspace from the left card. Pick a different one in the Workspaces card to switch.
+4. **Save project** — Registers the project. The manager updates the workspace's `workspace.json` and any running JavaLens picks up the new project immediately.
 
 ### Import VSCode Workspace
 
-Choose a `.code-workspace` file (**Browse**), then **Discover** to list Maven/Gradle and Eclipse/PDE Java projects. Tick the rows you want, set the **Workspace** (above) to the target workspace for the bulk import, and click **Import selected**. All imported projects join the same workspace.
+Pick a `.code-workspace` file (**Browse**), then **Discover** to enumerate Maven/Gradle and Eclipse/PDE Java projects. Tick the rows you want and click **Import selected** — every imported project joins the currently active workspace.
 
-### Managed Projects
+### Managed Projects (grouped view)
 
-The list shows every registered project: path, **workspace name** (with **Move…** to reassign a project to another workspace), and whether the workspace's JavaLens is **RUNNING** or stopped. **Start**, **Stop**, and **Delete** apply to one row. **Stop** removes the project from its workspace's running JavaLens via the file watcher; the workspace process keeps running for any remaining members and is killed only when the last project leaves. At the top, **Start all** and **Stop all** act per workspace; **Delete all** removes every registered project (use carefully).
+The right pane shows one **workspace card** per workspace, with project rows nested inside. Each card has a header with the workspace name, status badge, project count, and per-workspace **Start workspace / Stop workspace / Delete workspace** actions. Click the chevron to collapse or expand the card.
 
-The summary line (totals and “all running” style summary) gives you a quick health read across projects.
+Each project row inside a workspace card has:
+- A **selection checkbox** on the left (see "Bulk actions" below).
+- The **project name** (click to make it the *Selected project* shown in the bottom strip; click again to inline-rename).
+- The **project path** below the name.
+- **Refresh / Status badge / Start / Stop / Delete** on the right.
+- **Right-click** for a context menu: Start project / Stop project / Rename project / Move to workspace… / Delete project.
+
+At the very top of the pane, a metric strip shows totals: workspaces, running, stopped, projects.
+
+### Bulk actions (multi-select)
+
+Use the per-row checkboxes to build a **cross-workspace** selection set. Shift-click to extend a range; ctrl/cmd-click toggles a single row.
+
+When at least one row is selected, a **bulk-action bar** appears above the workspace cards:
+- **Move to workspace ▾** — move every selected project to a chosen (existing or new) workspace in one go.
+- **Start selected** / **Stop selected** — fan the per-project start/stop out over the selection.
+- **✕** — clear the selection.
+
+### Drag-and-drop
+
+Project rows are draggable. Grab any row and drop it on:
+- A **workspace card header** in the right pane, or
+- A **workspace row** in the left Workspaces list (handy when the destination card is collapsed or out of view).
+
+If the row you grab is part of an active selection, the **whole selection** moves with it. Dragging an unselected row carries just that one row and leaves the selection intact. The source row dims and the drop target outlines while you drag; Esc cancels.
 
 ### Agent deploy
 
-The **Agent deploy** strip contains **Deploy to Agents**, **Dry run**, **Regenerate**, and **Delete**. These actions do **not** start or stop JavaLens; they build MCP entries from your **registered** projects and read or write **MCP client config files** on disk (see Settings → MCP Config Locations).
+The **Agent deploy** strip contains **Deploy to Agents**, **Dry run**, **Regenerate**, and **Delete**. These actions do **not** start or stop JavaLens — they rebuild MCP entries from your workspaces and read or write **MCP client config files** on disk (see Settings → MCP Config Locations).
 
-- **Deploy to Agents** — Writes manager-owned MCP server entries for **each registered project** the manager can resolve (JAR/workspace/command line), into the selected clients’ configs, plus related rule blocks the manager maintains. If the runtime or workspace for a project cannot be resolved, that project may be omitted and deploy may report validation issues—start runtimes and **Save settings** as needed so paths stay consistent.
-- **Dry run** — Same validation and diff-style output as deploy, but **no files are written**. Use this to preview changes when unsure.
-- **Regenerate** — Rewrites the manager-managed sections in the client configs even if the manager thinks nothing changed. Use after manual edits outside the app, or to recover from a half-written file.
-- **Delete** — Removes **only** the manager-injected MCP servers and rule blocks from the selected clients. It does not uninstall JavaLens or remove your projects from the manager.
+- **Deploy to Agents** — Writes manager-owned MCP server entries (one per workspace, keyed `jl-<workspace-name>`) into the selected clients' configs, plus the rule blocks the manager maintains.
+- **Dry run** — Same validation and diff output as Deploy, but no files are written.
+- **Regenerate** — Force-rewrites the manager-managed sections, even if nothing has changed since the last write. Useful after manual edits.
+- **Delete** — Removes only the manager-injected MCP servers and rule blocks from the selected clients. It does not uninstall JavaLens or remove your projects.
 
-Clicking any of these opens a **target picker**: check **Cursor**, **Claude**, **Antigravity**, and/or **IntelliJ** for that run only. Default checkboxes for new runs come from each client’s **Deploy** toggle under **Settings → MCP Config Locations**.
+Each of these opens a **target picker**: check Cursor / Claude / Antigravity / IntelliJ for that run only. Defaults come from each client's **Deploy** toggle under Settings → MCP Config Locations.
 
-**Cursor (length limit):** Cursor rejects tools when `serverName + ":" + toolName` is longer than about **59–60** characters. The manager **shortens the generated `jl-` server id** (port + a truncated label) so the longest JavaLens tool names still fit. **Antigravity** instead limits how many MCP **services** you can list (on the order of 100 in total in some builds)—that is separate from this character limit.
+**Cursor (length limit):** Cursor rejects tools when `serverName + ":" + toolName` exceeds about **59–60** characters. The manager keeps the generated `jl-` ids short so the longest JavaLens tool names still fit. **Antigravity** instead caps the total *number* of MCP tools registered across all servers (around 100 in current builds) — that is a separate constraint, and the main reason to keep concurrent workspaces small.
 
 ### Selected Project Status
 
-When you select a row in **Managed Projects**, the bottom panel shows **Name**, **Project path**, **Workspace**, process id (**PID**) of the workspace's JavaLens process if running, and **Phase / Health** text from the runtime. Multiple projects in the same workspace share a PID. Use **Refresh** on that panel if you want to re-query status without switching views.
+When you click a project row, the bottom strip shows **Name**, **Project path**, **Workspace**, the **PID** of that workspace's JavaLens process (if running), and the **Phase / Health** detail from the runtime. Multiple projects in the same workspace share a PID. Use the refresh icon on that strip to re-query without switching views.
 
 ---
 
 ## Settings
 
-**Settings** uses a **two-by-two grid** (two columns, two rows) of cards: **JavaLens Runtime** and **Exposed Services** on the first row, **Machine Runtime Controls** and **MCP Config Locations** on the second. On small screens the grid may stack into a single column—there is **no** three-column layout by design.
-
-The page is taller than a typical window; use the app’s scroll area to reach **Save settings** at the bottom. The screenshots below are **intentional partial captures** of the top and bottom of the same page.
-
 ![Settings — JavaLens Runtime and Exposed Services](/help/settings-top.png)
 
-*Upper part of Settings (scroll down for the rest): **JavaLens Runtime** (left) and **Exposed Services** (right).*
+*Top half of the Settings page: JavaLens Runtime and Exposed Services.*
 
 ![Settings — Machine controls and MCP locations](/help/settings-bottom.png)
 
-*Lower part of Settings: **Machine Runtime Controls** (left) and **MCP Config Locations** (right), including merge options and the global **Save settings** bar.*
+*Bottom half: Machine Runtime Controls (with Diagnostics workspace counts) and MCP Config Locations.*
+
+Settings is a **two-by-two grid**: JavaLens Runtime and Exposed Services on the first row, Machine Runtime Controls and MCP Config Locations on the second. The page can be taller than the window — scroll to reach **Save settings** at the bottom.
 
 ### JavaLens Runtime
 
-Controls how the **global** JavaLens binary is sourced and updated:
+Controls how the global JavaLens binary is sourced and updated:
 
-- **Global JavaLens Source** — **Managed runtime** uses the copy the manager downloads and tracks; **Local JAR fallback** lets you point at a specific `javalens` JAR on disk (with **Browse**).
-- **Active** — Shows the version of the managed runtime when applicable.
-- **Update policy** — **Ask before updating** vs **Always keep latest** (behavior aligns with your confirmation preferences elsewhere).
-- **Check upstream JavaLens release on dashboard load** — When enabled, the manager checks for newer releases when you open the Dashboard.
-- **Download latest** / **Download update** — Fetches or updates the managed runtime (wording depends on whether an update is available).
-- **Refresh release info** — Re-queries release metadata without downloading.
-
-Status chips (**Status**, **Latest**, **Checked**) summarize the last release check. **Checked** may show a machine-readable timestamp from the updater—treat it as “when we last asked upstream,” not a clock for humans.
+- **Release source** — `hw1964/javalens-mcp` (recommended fork) or upstream / custom. Switching saves and downloads the latest release from the new source.
+- **Global JavaLens Source** — **Managed runtime** uses the binary the manager downloads and tracks; **Local JAR fallback** points at a specific `javalens.jar` on disk.
+- **Active** — Version of the managed runtime, when applicable.
+- **Update policy** — *Ask before updating* vs *Always keep latest*.
+- **Auto-check release source on dashboard load** — When enabled, the manager checks for newer releases when you open the Dashboard.
+- **Download update** — Appears when an update is available; fetches and installs it.
 
 ### Exposed Services
 
-**Test Services** runs a **live MCP handshake** against JavaLens and lists **tool** names and descriptions the server exposes (count and duration appear after a successful probe). Use this to confirm the runtime is up and the MCP surface matches expectations—especially after version changes.
+**Test Services** runs a live MCP handshake against JavaLens and lists the tool names and descriptions the server exposes (count and duration appear after a successful probe). Use this to confirm the runtime is reachable and that the tool surface matches expectations after a version change.
 
-If a probe fails, read the error text in the panel; fix connectivity or runtime issues before relying on **Deploy to Agents**.
+If a probe fails, fix connectivity or runtime issues before relying on **Deploy to Agents**.
 
 ### Machine Runtime Controls
 
-- **Manager data root** — Base directory for caches, logs, and other machine-local data ( **Browse** to change). **Use system tray** toggles whether the app integrates with the system tray where supported.
-- **Permitted project ports** — Inclusive range of TCP ports the manager may assign to projects. It assigns **one port per project** and avoids clashes with other assignments.
-- **Diagnostics** — Read-only paths for the **projects** store, **settings** file, **state** directory, and resolved **data root** (useful when reporting issues or backing up).
-
-Under diagnostics, **Clean logs** removes manager runtime logs (projects and settings stay). **Clean workspaces** removes workspace/index caches. **Start from scratch** runs both cleanups; stop runtimes first if you use it.
+- **Manager data root** — Base directory for caches, logs, and JDT workspace indexes. Each workspace's data lives under `<data_root>/workspaces/<workspace-name>/` (which is also where `workspace.json` is written).
+- **Use system tray** — When enabled, closing the window keeps the manager running in the system tray.
+- **Diagnostics** — Read-only summary: paths for the projects store, settings file, state directory, and resolved data root. **Workspaces** and **Project count** mirror the Dashboard totals, useful when reporting issues.
+- **Clean logs** — Removes manager runtime logs (workspaces and settings stay).
+- **Clean workspaces** — Removes JDT workspace caches (forces re-index next start).
+- **Start from scratch** — Runs both cleanups; stop runtimes first.
 
 ### MCP Config Locations
 
 For each supported client (**Cursor**, **Claude**, **Antigravity**, **IntelliJ**):
 
-- **Deploy** — When checked, this client is included in the **default** set when you open the deploy target picker. You can still override per run.
-- **Current** — Effective path the manager will use (auto-detected path or your **Manual override path**).
-- **Manual override path** — Use if the config file lives somewhere non-standard; **Browse** / **Clear** assist editing.
+- **Deploy** — When checked, the client is included in the *default* set of the deploy target picker. Override per run if you need to.
+- **Current** — Effective path the manager will use (auto-detected, or your manual override).
+- **Manual override path** — Use when the config file lives somewhere non-standard.
 
-**Redetect defaults** re-runs auto-detection for standard install locations.
+**Redetect defaults** re-runs auto-detection. **Antigravity (Google / Gemini):** the manager looks in several common locations including `~/.gemini/antigravity/mcp_config.json`. Antigravity caps total registered MCP tools (≈100), so keep concurrent workspaces small.
 
-**Antigravity (Google / Gemini):** the manager looks for a config in several common locations, including `~/.gemini/antigravity/mcp_config.json` (if that file is already present, it is often chosen first). You can set **Manual override path** to match where Antigravity actually reads from on your system. **Note:** Antigravity and related Gemini clients enforce a **low ceiling on how many MCP tools** can be registered at once (on the order of 100 *tools* across all servers, not a javalens-manager limit). If tools disappear, reduce the number of connected MCP servers or see upstream release notes; this is a **product** constraint, not tied to a JavaLens subscription.
+**Merge mode**:
+- **Safe merge** — inserts or updates only the manager-owned blocks, preserving unrelated entries.
+- **Replace managed section** — replaces the entire manager-delimited section. Stronger reset, still scoped to what the manager owns.
 
-**Merge mode** controls how written client configs combine with existing content:
-
-- **Safe merge** — Inserts or updates only the manager-owned blocks, preserving unrelated entries where possible.
-- **Replace managed section** — Replaces the entire manager-delimited section (stronger reset; still scoped to what the manager owns).
-
-**Create backup before MCP config write** — When enabled, the manager writes a timestamped backup next to the config before changing it. Recommended when experimenting with **Merge mode** or new paths.
+**Create backup before MCP config write** writes a timestamped backup next to each config before changes. Recommended while you're experimenting.
 
 ---
 
@@ -136,11 +170,15 @@ For each supported client (**Cursor**, **Claude**, **Antigravity**, **IntelliJ**
 
 | Goal | Where to go |
 |------|------------------|
-| Register or import projects | Dashboard (left) |
-| Start/stop JavaLens for a project | Managed Projects (per row or bulk) |
-| Push MCP URLs into Cursor / Claude / etc. | Dashboard → **Agent deploy** |
-| Change ports or data directory | Settings → **Machine Runtime Controls** |
+| Create or rename a workspace | Dashboard → Workspaces card (left) |
+| Register or import projects | Dashboard left column |
+| Move a project to another workspace | Right-click row → *Move to workspace…* OR drag the row onto a workspace |
+| Bulk-move projects | Tick checkboxes → *Move to workspace ▾* |
+| Start/stop a workspace's JavaLens | Workspace header in Managed Projects |
+| Push MCP entries into Cursor / Claude / etc. | Dashboard → **Agent deploy** |
+| Change data root or system-tray behavior | Settings → **Machine Runtime Controls** |
 | Point deploy at custom MCP config paths | Settings → **MCP Config Locations** |
 | Verify JavaLens exposes MCP tools | Settings → **Exposed Services** → **Test Services** |
+| Find logs / settings files for a bug report | Settings → **Diagnostics** |
 
-If something fails, check the **Diagnostics** paths for logs and settings files, run **Dry run** before **Deploy**, and keep **Create backup before MCP config write** on until you trust your layout.
+If something fails: check Diagnostics for paths, run **Dry run** before **Deploy**, and keep **Create backup before MCP config write** on until you trust your layout.
