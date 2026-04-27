@@ -23,6 +23,9 @@ src-tauri/target/
 docs/cursor_agentic_workflow_in_cursor.md
 docs/prompts/phase2-agent-orchestrator.md
 
+# Claude Code per-project state (scheduled_tasks.lock etc.)
+.claude/
+
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
