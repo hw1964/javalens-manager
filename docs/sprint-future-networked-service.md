@@ -86,6 +86,36 @@ If/when this sprint becomes real, these prerequisites should be in place:
 - **MCP Java SDK migration** (likely): replacing the hand-rolled `McpProtocolHandler` with the official SDK gets HTTP+SSE / Streamable HTTP transport for free, and tracks future MCP spec evolution. Worth doing before adding auth / session management on top of a hand-rolled implementation.
 - **Production-grade test coverage** of the existing tools — exposing them to a multi-user network surface raises the bar for tool-side correctness (input validation, error handling, resource cleanup).
 
+## Manager-side UX hooks that gain real value in this direction
+
+Two manager-side ideas were originally captured under Sprint 11 Phase G (Tier 4) but make far more sense once a networked, multi-user javalens deployment exists. For a single-developer local tool they are convenience features at best; for a shared service they become operationally meaningful. Captured here so they aren't lost.
+
+### Per-workspace data-dir size
+
+What it is: surface the disk footprint of each workspace's JDT data dir (`<data_root>/workspaces/<name>/`) in the manager UI — workspace card header, Diagnostics card, or both. Backend: a small Tauri (or networked-service API) call computing recursive size; UI reads it on demand or caches with a refresh button.
+
+Why it matters more in the networked direction:
+
+- **Capacity planning.** For one developer with 1-3 workspaces, a `du -sh` from a terminal answers the question. For a hosted service with many workspaces and many users, per-workspace size is a first-class operational metric — feeds into capacity dashboards and cleanup-policy decisions.
+- **Quota enforcement.** A per-user or per-team workspace quota is a natural feature on a shared deployment. Visibility is the precursor to enforcement.
+- **Cleanup nudges.** "This 12-GB workspace hasn't been touched in 90 days" only fires once you have visibility plus access logs.
+
+*Spec questions when scheduled:* refresh cadence (on demand, periodic, push from server); disk-only vs disk + RAM (RAM is per-PID, OS-specific, harder to make portable); whether to surface per-user totals as well; whether the metric flows through the same API as audit-log endpoints.
+
+### Workspace presets / templates (export / import / share)
+
+What it is: serialize a workspace definition (project paths, settings, optional metadata) as a portable JSON file, importable on another machine.
+
+Why it matters more in the networked direction:
+
+- **The "share with teammate" use case is the entire point of multi-user.** On a hosted deployment, a workspace preset becomes a *template*: "everyone joining the JATS workspace pulls these 12 OSGi bundles, with these analysis settings, against this target platform." That's a server-side resource, not a local file.
+- **Reproducibility.** CI / agent farms need declarative workspace specs, not click-through-the-UI configuration.
+- **Compliance.** A signed workspace template ("this is the approved JATS workspace shape") is something an org-policy environment will demand.
+
+The local single-developer use case (`cp ~/.cache/javalens-manager/workspaces/X` between two of your own machines) is a thin one — not worth shipping presets just for it.
+
+*Spec questions when scheduled:* preset payload (path resolution, env-var substitution, project-vs-workspace-level settings); on a networked service, whether presets are server-stored objects with their own access control; round-tripping with `.code-workspace` files; signing / provenance metadata.
+
 ## Open questions to resolve when scheduled
 
 - **Single-tenant or multi-tenant?** One javalens deployment per team, or one per user? Affects the auth model.

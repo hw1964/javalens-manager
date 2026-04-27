@@ -342,46 +342,25 @@ These are also Eclipse/IntelliJ standards but not required for the JATS overhaul
 
 Phase E makes Sprint 11 substantially bigger than originally planned (was ~2 weeks for detection-matrix + cutover; now ~3 weeks with 5 LTK refactorings added). Acceptable because the JATS overhaul depends on these tools and "do them in Sprint 12" would mean an extra fork release for one feature set. If the sprint runs over, the natural cut line is to ship Phases A/B/C/D as `v1.4.0` first, then a fast follow-up `v1.4.1` with Phase E once the LTK plumbing settles.
 
-## Phase G — Manager-side UX workstream (TBD, to be discussed and spec'd)
-
-> **Status: not yet scheduled.** Captured here so the open ideas don't drift; planning + sizing happens after Sprint 11 javalens work locks. This workstream may land alongside manager `v0.11.0` (Phase F) or slide to a later `v0.11.x` depending on scope.
->
-> Origin: 2026-04-27 UX review of the post-Sprint-10 workspace-first dashboard. Tier 1 + Tier 2 items were folded into the v0.10.4 cycle; Tier 3 was pulled into the Sprint 10 polish track and shipped as `v0.10.5` (multi-select bulk move, drag-drop between workspaces, Diagnostics workspace count). Only Tier 4 remains in Phase G.
-
-### Tier 4 — bigger ideas
-
-- **G.4 Per-workspace JDT data dir size.** Show disk footprint in the workspace header — encourages users to delete unused workspaces. Backend: small Tauri command computing size of `<data_root>/workspaces/<name>` (recursive walk). *Spec questions:* refresh cadence (on dashboard load? cached + refresh button?); disk-only for v1 (RAM is per-PID, OS-specific, harder to make portable); whether to surface size in the workspace card on the left or only inside the right-hand grouped view.
-- **G.5 Workspace presets (export/import).** Save a workspace + its project paths as a portable JSON file that can be re-imported on another machine or shared with teammates — without crossing into the networked-service direction ([`sprint-future-networked-service.md`](sprint-future-networked-service.md)). *Spec questions:* preset payload (relative vs absolute paths; environment-variable substitution like `$HOME`); import-time path resolution when files are missing (skip + warn vs error); whether a `.code-workspace` round-trips cleanly through this format.
-- **G.6 First-launch migration banner.** Migration to named workspaces (Sprint 10) happens silently on read; users with auto-derived `workspace-11100` names get no UI nudge to rename or consolidate. Add an unobtrusive banner on first launch after a migration: "Your projects are now grouped into workspaces. Auto-named ones look like `workspace-11100` — rename them in the workspace list on the left." Goes away after first dismiss. *Spec questions:* dismissal storage (localStorage vs a settings field); whether future migrations get their own banner-version key.
-
-### Dropped from the original Tier 3/4 list
-
-- **~~Pre-fill new workspace name from the `.code-workspace` filename.~~** Dropped 2026-04-27. Workflow flipped post-Sprint-10: the user picks a workspace name first, then adds projects to it (including via VSCode-workspace import). The imported `.code-workspace` filename no longer drives workspace identity, so deriving the workspace name from it is the wrong direction.
-
-### Spec / sizing follow-up
-
-Each remaining item needs a concrete spec before scheduling. Likely order, by rough size:
-
-1. **G.4 disk size** — small once we settle disk-only + refresh model.
-2. **G.6 migration banner** — small UI; the policy questions (dismissal + versioning) take more time than the code.
-3. **G.5 workspace presets** — biggest; defer until the rest land or until a teammate-share use case forces it.
-
-Once any of these are spec'd, slot in front of Phase F if intended for `v0.11.0`, else schedule against `v0.11.x` and leave Phase F as-is.
-
-## Phase F — Cutover release
+## Phase F — Cutover release (fork v1.4.0 + manager v0.11.0)
 
 ### F.1 Tag fork v1.4.0
 
 Bump pom + MANIFEST.MF qualifiers as needed; `git tag -a v1.4.0 -F docs/release-notes/v1.4.0.md`; push tag → CI publishes the GitHub release. Release notes cover Phases A/B/C (detection matrix), Phase D (tool consolidation), and Phase E (refactoring tools) under one curated note.
 
-### F.2 Manager release
+### F.2 Manager release (v0.11.0)
 
-Bump versions in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` to `0.11.0`. Tag and push. Update README and `src/assets/help.md` to reflect:
+Bump versions in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` to `0.11.0`. Tag and push.
 
-- The consolidated `find_*` tool surface (Phase D).
-- The new structural refactoring tools — `move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field` (Phase E).
+Documentation updates in `src/assets/help.md`:
 
-No Rust or Svelte code changes are needed for the cutover itself. Sprint 10 already removed the legacy `single_workspace_mode` flag and the per-port concept; workspace mode is the only mode and has been since `v0.10.4`.
+- The consolidated `find_*` tool surface (Phase D) — drop references to the old narrow tools, add a paragraph on `find_pattern_usages(kind, ...)` and `find_quality_issue(kind, ...)`.
+- The new structural refactoring tools (Phase E) — short paragraph noting `move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field` exist and what they do.
+- **Help screenshot refresh** in `public/help/` — `dashboard.png`, `settings-top.png`, `settings-bottom.png` currently show pre-v0.10.6 UI. Replace with current captures (workspaces card on top of left column, status-lamp colors, Diagnostics workspace counts).
+
+README gets the same one-paragraph summary linking to the v1.4.0 release notes.
+
+No Rust or Svelte code changes are needed for the cutover itself. Sprint 10 already removed the legacy `single_workspace_mode` flag and the per-port concept; workspace mode is the only mode and has been since `v0.10.4`. Manager-side UX is settled for now — the few "bigger ideas" originally captured under a Phase G workstream were either shipped early in `v0.10.5`/`v0.10.6` or deferred to the networked-service track ([`sprint-future-networked-service.md`](sprint-future-networked-service.md)).
 
 ## Tests rollup
 
