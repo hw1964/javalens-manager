@@ -81,6 +81,162 @@
   /** Currently-open right-click context menu. Closed = null. */
   let contextMenu: { x: number; y: number; items: ContextMenuItem[] } | null = null;
 
+  /** Sprint-10 polish (G.1): cross-workspace multi-select. Holds project
+   * IDs only; reactive Set replacement (`selectedProjectIds = new Set(...)`)
+   * triggers Svelte updates. */
+  let selectedProjectIds = new Set<string>();
+  /** Anchor row for shift-click range selection. Null until first click. */
+  let selectionAnchorId: string | null = null;
+  /** Bulk-action "Move to" dropdown open state. */
+  let bulkMoveOpen = false;
+  let bulkMoveSelection = "";
+  let bulkMoveNewName = "";
+
+  function clearSelection() {
+    selectedProjectIds = new Set();
+    selectionAnchorId = null;
+    bulkMoveOpen = false;
+  }
+
+  /** Flat list of project IDs in render order — used for shift-click
+   * range computation. */
+  function flatProjectIds(): string[] {
+    const ids: string[] = [];
+    for (const ws of groupedWorkspaces) {
+      for (const p of ws.projects) ids.push(p.id);
+    }
+    return ids;
+  }
+
+  function toggleProjectSelection(id: string, event: MouseEvent) {
+    const next = new Set(selectedProjectIds);
+    if (event.shiftKey && selectionAnchorId) {
+      const ids = flatProjectIds();
+      const a = ids.indexOf(selectionAnchorId);
+      const b = ids.indexOf(id);
+      if (a !== -1 && b !== -1) {
+        const [from, to] = a <= b ? [a, b] : [b, a];
+        for (let i = from; i <= to; i++) next.add(ids[i]);
+      } else {
+        next.add(id);
+      }
+    } else {
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      selectionAnchorId = id;
+    }
+    selectedProjectIds = next;
+  }
+
+  $: selectionCount = selectedProjectIds.size;
+  $: selectedProjects = projects.filter((p) => selectedProjectIds.has(p.id));
+
+  function bulkMoveCommit() {
+    const target =
+      bulkMoveSelection === "__new__" ? bulkMoveNewName.trim() : bulkMoveSelection;
+    if (!target) return;
+    for (const p of selectedProjects) {
+      if (p.workspaceName === target) continue;
+      onSetWorkspace(p.id, target);
+    }
+    clearSelection();
+  }
+
+  function bulkStart() {
+    for (const p of selectedProjects) onStart(p.id);
+    clearSelection();
+  }
+
+  function bulkStop() {
+    for (const p of selectedProjects) onStop(p.id);
+    clearSelection();
+  }
+
+  /** Sprint-10 polish (G.2): drag-drop state. `draggingProjectIds` is
+   * the snapshot of IDs being dragged (selection or single row);
+   * `dragOverWorkspace` is the workspace card currently under the
+   * cursor (for the highlight). */
+  let draggingProjectIds = new Set<string>();
+  let dragOverWorkspace: string | null = null;
+
+  const DND_MIME = "application/x-javalens-projects";
+
+  function handleProjectDragStart(event: DragEvent, project: ProjectRecord) {
+    if (disabled) return;
+    const ids = selectedProjectIds.has(project.id)
+      ? Array.from(selectedProjectIds)
+      : [project.id];
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData(DND_MIME, JSON.stringify(ids));
+    }
+    draggingProjectIds = new Set(ids);
+  }
+
+  function handleProjectDragEnd() {
+    draggingProjectIds = new Set();
+    dragOverWorkspace = null;
+  }
+
+  function handleWorkspaceDragOver(event: DragEvent) {
+    // Required to allow drop. Indicating "move" here updates the cursor.
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    event.preventDefault();
+  }
+
+  function handleWorkspaceDragEnter(event: DragEvent, workspaceName: string) {
+    event.preventDefault();
+    dragOverWorkspace = workspaceName;
+  }
+
+  function handleWorkspaceDragLeave(event: DragEvent) {
+    // Only clear when the cursor leaves the *element* (not when it
+    // enters a child). relatedTarget === null on cross-window leaves.
+    const target = event.currentTarget as HTMLElement | null;
+    const next = event.relatedTarget as Node | null;
+    if (!target || !next || !target.contains(next)) {
+      dragOverWorkspace = null;
+    }
+  }
+
+  function handleWorkspaceDrop(event: DragEvent, workspaceName: string) {
+    event.preventDefault();
+    dragOverWorkspace = null;
+    const raw = event.dataTransfer?.getData(DND_MIME);
+    if (!raw) return;
+    let ids: string[];
+    try {
+      ids = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (!Array.isArray(ids)) return;
+    const idSet = new Set(ids);
+    for (const project of projects) {
+      if (!idSet.has(project.id)) continue;
+      if (project.workspaceName === workspaceName) continue;
+      onSetWorkspace(project.id, workspaceName);
+    }
+    clearSelection();
+    handleProjectDragEnd();
+  }
+
+  /** When the project list shrinks (delete, workspace delete) drop any
+   * stale IDs from the selection so the bar count stays truthful. */
+  $: if (selectedProjectIds.size > 0) {
+    const valid = new Set(projects.map((p) => p.id));
+    let mutated = false;
+    const next = new Set<string>();
+    for (const id of selectedProjectIds) {
+      if (valid.has(id)) next.add(id);
+      else mutated = true;
+    }
+    if (mutated) {
+      selectedProjectIds = next;
+      if (next.size === 0) selectionAnchorId = null;
+    }
+  }
+
   /** Inline rename state for a project's display name (h3 → input). */
   let renamingProjectId: string | null = null;
   let projectRenameDraft = "";
@@ -577,6 +733,94 @@
     {/if}
   {/if}
 
+  {#if selectionCount > 0}
+    {@const otherWorkspaces = knownWorkspaces}
+    <div class="bulk-action-bar" role="toolbar" aria-label="Bulk actions for selected projects">
+      <span class="bulk-action-count" title="Number of projects in the current selection">
+        {selectionCount} selected
+      </span>
+      {#if !bulkMoveOpen}
+        <button
+          class="primary"
+          disabled={disabled}
+          on:click={() => {
+            bulkMoveOpen = true;
+            bulkMoveSelection = otherWorkspaces[0] ?? "__new__";
+            bulkMoveNewName = "";
+          }}
+          title="Move every selected project to a chosen workspace"
+          type="button"
+        >
+          Move to workspace…
+        </button>
+      {:else}
+        <select
+          bind:value={bulkMoveSelection}
+          disabled={disabled}
+          title="Pick the destination workspace"
+        >
+          {#each otherWorkspaces as ws}
+            <option value={ws}>{ws}</option>
+          {/each}
+          <option value="__new__">+ New workspace…</option>
+        </select>
+        {#if bulkMoveSelection === "__new__"}
+          <input
+            bind:value={bulkMoveNewName}
+            disabled={disabled}
+            placeholder="New workspace name"
+            title="Type the new workspace name. Enter to apply, Esc to cancel."
+            on:keydown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); bulkMoveCommit(); }
+              else if (e.key === "Escape") { e.preventDefault(); bulkMoveOpen = false; }
+            }}
+          />
+        {/if}
+        <button
+          disabled={disabled}
+          on:click={bulkMoveCommit}
+          title="Apply the move to all selected projects"
+          type="button"
+        >
+          Apply
+        </button>
+        <button
+          disabled={disabled}
+          on:click={() => (bulkMoveOpen = false)}
+          title="Close the move dropdown without changing the selection"
+          type="button"
+        >
+          Cancel
+        </button>
+      {/if}
+      <button
+        disabled={disabled}
+        on:click={bulkStart}
+        title="Start runtimes for every selected project"
+        type="button"
+      >
+        Start selected
+      </button>
+      <button
+        disabled={disabled}
+        on:click={bulkStop}
+        title="Stop runtimes for every selected project"
+        type="button"
+      >
+        Stop selected
+      </button>
+      <button
+        class="bulk-action-clear"
+        disabled={disabled}
+        on:click={clearSelection}
+        title="Clear the current selection"
+        type="button"
+      >
+        ✕
+      </button>
+    </div>
+  {/if}
+
   {#if projects.length === 0}
     <div class="empty-state">
       No projects registered yet. Configure JavaLens first, then add a Java project on the left.
@@ -587,7 +831,15 @@
         {@const collapsed = collapsedWorkspaces[workspace.name] ?? (workspace.phase === "stopped")}
         {@const isRenaming = renamingWorkspace === workspace.name}
         <article class="workspace-card" on:contextmenu={(e) => openWorkspaceContextMenu(e, workspace)}>
-          <header class="workspace-header">
+          <header
+            class="workspace-header"
+            class:drag-over={dragOverWorkspace === workspace.name}
+            on:dragenter={(e) => handleWorkspaceDragEnter(e, workspace.name)}
+            on:dragleave={handleWorkspaceDragLeave}
+            on:dragover={handleWorkspaceDragOver}
+            on:drop={(e) => handleWorkspaceDrop(e, workspace.name)}
+            role="presentation"
+          >
             <div class="workspace-title">
               <button
                 aria-label={collapsed ? "Expand workspace" : "Collapse workspace"}
@@ -669,11 +921,24 @@
                 {@const status = runtimeStatuses[project.id]}
                 <article
                   class:selected={project.id === selectedProjectId}
+                  class:selected-row={selectedProjectIds.has(project.id)}
+                  class:dragging={draggingProjectIds.has(project.id)}
                   class="project-card nested"
+                  draggable={!disabled}
                   on:contextmenu={(e) => openProjectContextMenu(e, project)}
+                  on:dragstart={(e) => handleProjectDragStart(e, project)}
+                  on:dragend={handleProjectDragEnd}
                   use:registerRow={project.id}
                 >
                   <div class="project-row">
+                    <input
+                      type="checkbox"
+                      class="project-select-checkbox"
+                      checked={selectedProjectIds.has(project.id)}
+                      disabled={disabled}
+                      on:click|stopPropagation={(e) => toggleProjectSelection(project.id, e)}
+                      title="Select for bulk action (shift-click to extend range)"
+                    />
                     <div class="project-left">
                       {#if renamingProjectId === project.id}
                         <input

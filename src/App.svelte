@@ -449,6 +449,11 @@
                   activeWorkspaceName = workspacesWithProjects.find((n) => n !== name) ?? "";
                 }
               }}
+              onProjectsDropped={(workspaceName, projectIds) => {
+                for (const id of projectIds) {
+                  appStore.setProjectWorkspaceEntry(id, workspaceName);
+                }
+              }}
               projects={$appStore.projects ?? []}
               runtimeStatuses={$appStore.runtimeStatuses ?? {}}
             />
@@ -575,7 +580,9 @@
           installedRuntime={$appStore.installedRuntime}
           lastCleanupSummary={$appStore.lastCleanupSummary}
           lastServiceProbe={$appStore.lastServiceProbe}
+          projects={$appStore.projects ?? []}
           releaseStatus={$appStore.releaseStatus}
+          runtimeStatuses={$appStore.runtimeStatuses ?? {}}
           serviceProbeBusy={$appStore.serviceProbeBusy ?? false}
           serviceProbeError={$appStore.serviceProbeError}
           saveMessage={$appStore.settingsSaveMessage}

@@ -346,13 +346,7 @@ Phase E makes Sprint 11 substantially bigger than originally planned (was ~2 wee
 
 > **Status: not yet scheduled.** Captured here so the open ideas don't drift; planning + sizing happens after Sprint 11 javalens work locks. This workstream may land alongside manager `v0.11.0` (Phase F) or slide to a later `v0.11.x` depending on scope.
 >
-> Origin: 2026-04-27 UX review of the post-Sprint-10 workspace-first dashboard. Tier 1 + Tier 2 items were folded into the v0.10.4 cycle; Tier 3 + Tier 4 are captured below.
-
-### Tier 3 — workflow improvements
-
-- **G.1 Bulk multi-select + move.** Today the user moves projects one at a time via right-click → "Move to workspace…" or the inline dropdown. With 12 misclassified projects in one workspace, that's 12 actions. Add a checkbox column + shift-click range select + a "Move selected" button. *Spec questions:* checkbox column always-visible vs. revealed on hover; whether multi-select also drives Start/Stop ("Start selected"); behavior when the workspace card is collapsed.
-- **G.2 Drag-drop projects between workspace cards.** Important (user, 2026-04-27). Visual, fast, no prompts: drag a project row, drop on a different workspace header → moves it. *Spec questions:* drag handle vs whole-row; visual affordance during drag (ghost row, drop-zone highlight); cancel-drag UX (Esc and out-of-target both revert); should drop on the "+ New workspace" affordance create-and-move in one gesture.
-- **G.3 Diagnostics card → workspace count.** [`RuntimeSettings.svelte:712`](../src/lib/components/RuntimeSettings.svelte#L712) Diagnostics card today shows config file paths only. Add `Workspaces: N (M running)` so the Settings → Machine card answers "what's loaded" without bouncing to Dashboard. The header subtitle (Tier 1 #5, shipped in v0.10.4) already shows this — Diagnostics is a second context for the same answer.
+> Origin: 2026-04-27 UX review of the post-Sprint-10 workspace-first dashboard. Tier 1 + Tier 2 items were folded into the v0.10.4 cycle; Tier 3 was pulled into the Sprint 10 polish track and shipped as `v0.10.5` (multi-select bulk move, drag-drop between workspaces, Diagnostics workspace count). Only Tier 4 remains in Phase G.
 
 ### Tier 4 — bigger ideas
 
@@ -366,14 +360,11 @@ Phase E makes Sprint 11 substantially bigger than originally planned (was ~2 wee
 
 ### Spec / sizing follow-up
 
-Each item above needs a concrete spec before scheduling. Likely order, by user pull and rough size:
+Each remaining item needs a concrete spec before scheduling. Likely order, by rough size:
 
-1. **G.2 drag-drop** — first to spec, given direct user request 2026-04-27.
-2. **G.1 multi-select + bulk move** — natural sibling to G.2; same checkbox column unlocks both.
-3. **G.4 disk size** — small once we settle disk-only + refresh model.
-4. **G.3 Diagnostics workspace count** — ~30-min tweak once a workspace-counts helper exists for G.4 (the same backend can serve both).
-5. **G.6 migration banner** — small UI; the policy questions (dismissal + versioning) take more time than the code.
-6. **G.5 workspace presets** — biggest; defer until the rest land or until a teammate-share use case forces it.
+1. **G.4 disk size** — small once we settle disk-only + refresh model.
+2. **G.6 migration banner** — small UI; the policy questions (dismissal + versioning) take more time than the code.
+3. **G.5 workspace presets** — biggest; defer until the rest land or until a teammate-share use case forces it.
 
 Once any of these are spec'd, slot in front of Phase F if intended for `v0.11.0`, else schedule against `v0.11.x` and leave Phase F as-is.
 

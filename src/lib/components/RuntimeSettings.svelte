@@ -10,7 +10,9 @@
     McpClientPaths,
     McpMergeMode,
     ManagerSettings,
+    ProjectRecord,
     ReleaseStatus,
+    RuntimeStatusRecord,
     ServiceProbeResult,
     UpdateSettingsInput,
     UpdatePolicy
@@ -27,6 +29,22 @@
   export let saveStatus: "idle" | "saving" | "success" | "error" = "idle";
   export let saveMessage: string | undefined;
   export let disabled = false;
+  export let projects: ProjectRecord[] = [];
+  export let runtimeStatuses: Record<string, RuntimeStatusRecord> = {};
+
+  $: workspaceStats = (() => {
+    const byName = new Map<string, { count: number; running: number }>();
+    for (const p of projects) {
+      const ws = p.workspaceName || "workspace-default";
+      const cur = byName.get(ws) ?? { count: 0, running: 0 };
+      cur.count += 1;
+      if (runtimeStatuses[p.id]?.phase === "running") cur.running += 1;
+      byName.set(ws, cur);
+    }
+    let runningWorkspaces = 0;
+    for (const v of byName.values()) if (v.running > 0) runningWorkspaces += 1;
+    return { workspaces: byName.size, runningWorkspaces, projects: projects.length };
+  })();
 
   const dispatch = createEventDispatcher<{
     save: UpdateSettingsInput;
@@ -726,6 +744,14 @@
             <div>
               <span class="label">Data root</span>
               <strong>{bootstrap?.defaultDataRoot ?? "-"}</strong>
+            </div>
+            <div title="Number of workspaces (and how many have at least one running runtime)">
+              <span class="label">Workspaces</span>
+              <strong>{workspaceStats.workspaces} ({workspaceStats.runningWorkspaces} running)</strong>
+            </div>
+            <div title="Total number of registered projects across all workspaces">
+              <span class="label">Project count</span>
+              <strong>{workspaceStats.projects}</strong>
             </div>
           </div>
 

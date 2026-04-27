@@ -20,6 +20,51 @@
   /** Optional: delete a workspace on the left. When omitted the icon
    * is hidden. */
   export let onDelete: ((name: string) => void) | undefined = undefined;
+  /** Optional: drop handler for projects dragged from ProjectList onto
+   * a workspace row. When omitted the rows are not drop targets. */
+  export let onProjectsDropped:
+    | ((workspaceName: string, projectIds: string[]) => void)
+    | undefined = undefined;
+
+  const DND_MIME = "application/x-javalens-projects";
+  let dragOverRowName: string | null = null;
+
+  function rowDragOver(event: DragEvent) {
+    if (!onProjectsDropped) return;
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    event.preventDefault();
+  }
+
+  function rowDragEnter(event: DragEvent, name: string) {
+    if (!onProjectsDropped) return;
+    event.preventDefault();
+    dragOverRowName = name;
+  }
+
+  function rowDragLeave(event: DragEvent) {
+    if (!onProjectsDropped) return;
+    const target = event.currentTarget as HTMLElement | null;
+    const next = event.relatedTarget as Node | null;
+    if (!target || !next || !target.contains(next)) {
+      dragOverRowName = null;
+    }
+  }
+
+  function rowDrop(event: DragEvent, name: string) {
+    if (!onProjectsDropped) return;
+    event.preventDefault();
+    dragOverRowName = null;
+    const raw = event.dataTransfer?.getData(DND_MIME);
+    if (!raw) return;
+    let ids: string[];
+    try {
+      ids = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (!Array.isArray(ids) || ids.length === 0) return;
+    onProjectsDropped(name, ids);
+  }
   /** All workspaces the UI knows about, including pinned empty ones
    * (newly-created via "+ New workspace…" with no projects yet).
    * Sorted, deduped — owner is App.svelte. */
@@ -163,8 +208,13 @@
       <li>
         <div
           class:active={ws.name === activeWorkspaceName}
+          class:drag-over={dragOverRowName === ws.name}
           class="workspace-row"
           on:contextmenu={(e) => openWorkspaceContextMenu(e, ws)}
+          on:dragenter={(e) => rowDragEnter(e, ws.name)}
+          on:dragleave={rowDragLeave}
+          on:dragover={rowDragOver}
+          on:drop={(e) => rowDrop(e, ws.name)}
           role="presentation"
         >
           <button
