@@ -1,6 +1,6 @@
 # Sprint 11 Backlog (draft)
 
-> **Status: draft, updated 2026-04-26 after Sprint 10 Phase A landed as fork `v1.3.0`.** This sprint extends the multi-project `WorkspaceManager` shipped in v1.3.0 with detection-matrix completion AND tool-surface consolidation. Targets fork `v1.4.0` (was originally `v1.3.0` in earlier draft — re-versioned to follow Sprint 10's actual release).
+> **Status: draft, updated 2026-04-26 after Sprint 10 Phase A landed as fork `v1.3.0`.** This sprint extends the multi-project `WorkspaceManager` shipped in v1.3.0 with detection-matrix completion AND tool-surface consolidation. Targets fork `v1.5.0` (was originally `v1.3.0` in earlier draft — re-versioned to follow Sprint 10's actual release).
 
 ## Goal
 
@@ -9,14 +9,14 @@ Four threads, one release:
 1. **Detection-matrix completion** — any project type loaded into a workspace gets fully indexed (sources + dependencies) regardless of build system. Workspace bundle pool resolves `Require-Bundle` between sibling PDE bundles loaded together. Gradle resolution moves from heuristic to proper.
 2. **Tool-surface consolidation** — collapse ~13 narrow `find_X` tools into 2 parametric tools so the per-service tool count drops from 66 to ~55, freeing budget for the next thread.
 3. **Structural refactoring (Ring 1, pulled forward from Sprint 12)** — five JDT LTK-backed refactoring tools: `move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`. Move-class and repackaging are the most error-prone operations in agent-driven Java work; without first-class refactoring the agent has to do find-and-replace across imports and qualified names by hand. With LTK behind these tools, javalens-mcp + javalens-manager become a professional-grade autonomous-Java-development toolset that goes beyond what upstream `pzalutski-pixel/javalens-mcp` aims for.
-4. **Cutover** — cut fork release `v1.4.0`, ship manager `v0.11.0` (version bumps + README/Help.md updates for the new tool surface).
+4. **Cutover** — cut fork release `v1.5.0`, ship manager `v0.11.0` (version bumps + README/Help.md updates for the new tool surface).
 
 End-of-sprint outcome:
 
 - A workspace can hold any mix of regular Maven modules, Maven-Tycho/PDE bundles, pure Eclipse PDE bundles, and Gradle modules, and every project type returns correct source roots + dependencies.
 - Cross-bundle navigation, find-references, and refactoring work between PDE bundles in the same workspace — including LTK-backed `pull_up` across OSGi bundle boundaries.
 - javalens-mcp registers ~60 tools per service (66 → 55 from Phase D consolidation, then +5 from Phase E refactorings) — leaves ~40 slots in the agent's 100-tool budget for Ring 2+ work without future pressure.
-- Fork release `v1.4.0` published; manager-side single-workspace mode becomes the default.
+- Fork release `v1.5.0` published; manager-side single-workspace mode becomes the default.
 
 Reference plan: `~/.claude/plans/make-a-plan-happy-fern.md`. Predecessor: `docs/sprint-10-backlog.md` (multi-project workspace, shipped as v1.3.0).
 
@@ -35,8 +35,8 @@ Three of the four cases have correctness gaps. Sprint 11 closes them.
 
 ## Repos touched
 
-- **`javalens-mcp` (fork)**: Tycho packaging detection, `MANIFEST.MF` parsing helpers, workspace bundle pool, Gradle Tooling API integration, **tool-surface consolidation (Phase E, new)**. Cut release `v1.4.0`.
-- **`javalens-manager`**: cut a manager version (`v0.11.0`) targeting fork `v1.4.0` — version bumps and Help.md / README updates for the new tool surface and refactoring tools. No Rust or Svelte code changes required from Phases A–E.
+- **`javalens-mcp` (fork)**: Tycho packaging detection, `MANIFEST.MF` parsing helpers, workspace bundle pool, Gradle Tooling API integration, **tool-surface consolidation (Phase E, new)**. Cut release `v1.5.0`.
+- **`javalens-manager`**: cut a manager version (`v0.11.0`) targeting fork `v1.5.0` — version bumps and Help.md / README updates for the new tool surface and refactoring tools. No Rust or Svelte code changes required from Phases A–E.
 
 ## Phase A — Tycho-aware Maven detection
 
@@ -193,7 +193,7 @@ Optional kind-specific parameters (e.g. `annotationName` for annotation kind, `q
 
 ### D.3 Deprecate-and-delete the 13 narrow tools
 
-Remove the old `Find*Tool.java` files in the same v1.4.0 release. **Breaking change for any external MCP client that wasn't using javalens-manager.** Acceptable — javalens-manager is the only known consumer; the npm/MCP-Registry surface (which the fork doesn't publish to anyway, see v1.2.1's release-workflow strip) means no third-party tooling depends on these names.
+Remove the old `Find*Tool.java` files in the same v1.5.0 release. **Breaking change for any external MCP client that wasn't using javalens-manager.** Acceptable — javalens-manager is the only known consumer; the npm/MCP-Registry surface (which the fork doesn't publish to anyway, see v1.2.1's release-workflow strip) means no third-party tooling depends on these names.
 
 ### D.4 Update tool registrations
 
@@ -340,13 +340,13 @@ These are also Eclipse/IntelliJ standards but not required for the JATS overhaul
 
 ### Phase E size warning
 
-Phase E makes Sprint 11 substantially bigger than originally planned (was ~2 weeks for detection-matrix + cutover; now ~3 weeks with 5 LTK refactorings added). Acceptable because the JATS overhaul depends on these tools and "do them in Sprint 12" would mean an extra fork release for one feature set. If the sprint runs over, the natural cut line is to ship Phases A/B/C/D as `v1.4.0` first, then a fast follow-up `v1.4.1` with Phase E once the LTK plumbing settles.
+Phase E makes Sprint 11 substantially bigger than originally planned (was ~2 weeks for detection-matrix + cutover; now ~3 weeks with 5 LTK refactorings added). Acceptable because the JATS overhaul depends on these tools and "do them in Sprint 12" would mean an extra fork release for one feature set. If the sprint runs over, the natural cut line is to ship Phases A/B/C/D as `v1.5.0` first, then a fast follow-up `v1.5.1` with Phase E once the LTK plumbing settles.
 
-## Phase F — Cutover release (fork v1.4.0 + manager v0.11.0)
+## Phase F — Cutover release (fork v1.5.0 + manager v0.11.0)
 
-### F.1 Tag fork v1.4.0
+### F.1 Tag fork v1.5.0
 
-Bump pom + MANIFEST.MF qualifiers as needed; `git tag -a v1.4.0 -F docs/release-notes/v1.4.0.md`; push tag → CI publishes the GitHub release. Release notes cover Phases A/B/C (detection matrix), Phase D (tool consolidation), and Phase E (refactoring tools) under one curated note.
+Bump pom + MANIFEST.MF qualifiers as needed; `git tag -a v1.5.0 -F docs/release-notes/v1.5.0.md`; push tag → CI publishes the GitHub release. Release notes cover Phases A/B/C (detection matrix), Phase D (tool consolidation), and Phase E (refactoring tools) under one curated note.
 
 ### F.2 Manager release (v0.11.0)
 
@@ -358,7 +358,7 @@ Documentation updates in `src/assets/help.md`:
 - The new structural refactoring tools (Phase E) — short paragraph noting `move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field` exist and what they do.
 - **Help screenshot refresh** in `public/help/` — `dashboard.png`, `settings-top.png`, `settings-bottom.png` currently show pre-v0.10.6 UI. Replace with current captures (workspaces card on top of left column, status-lamp colors, Diagnostics workspace counts).
 
-README gets the same one-paragraph summary linking to the v1.4.0 release notes.
+README gets the same one-paragraph summary linking to the v1.5.0 release notes.
 
 No Rust or Svelte code changes are needed for the cutover itself. Sprint 10 already removed the legacy `single_workspace_mode` flag and the per-port concept; workspace mode is the only mode and has been since `v0.10.4`. Manager-side UX is settled for now — the few "bigger ideas" originally captured under a Phase G workstream were either shipped early in `v0.10.5`/`v0.10.6` or deferred to the networked-service track ([`sprint-future-networked-service.md`](sprint-future-networked-service.md)).
 
@@ -377,7 +377,7 @@ No Rust or Svelte code changes are needed for the cutover itself. Sprint 10 alre
 - [ ] Cross-bundle find-references works across two PDE bundles loaded into one workspace.
 - [ ] Tool count per service drops to ~55 (from 66 in v1.3.0); after Phase E adds 5 refactoring tools, lands at ~60.
 - [ ] All five Phase E refactoring tools (`move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`) pass happy/validation/conflict tests; cross-bundle `pull_up` integration test green.
-- [ ] Fork `v1.4.0` published with detection-matrix completion + workspace bundle pool + Gradle Tooling API + tool-surface consolidation + structural refactoring.
+- [ ] Fork `v1.5.0` published with detection-matrix completion + workspace bundle pool + Gradle Tooling API + tool-surface consolidation + structural refactoring.
 - [ ] Manager `v0.11.0` tagged with version bumps + Help.md / README updates for the new tool surface (Phase D) and refactoring tools (Phase E).
 - [ ] No regression on Sprint 9 / Sprint 10 fixtures.
 
@@ -455,6 +455,6 @@ Currently the manager downloads the runtime separately (per `release_repo`). Bun
 - `java-engineer` (or split): Phase D — `find_pattern_usages`, `find_quality_issue` parametric tools + 13-tool deletion.
 - `java-engineer`: Phase E — `AbstractRefactoringTool` base + 5 LTK-backed refactoring tools (`move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`).
 - `tauri-engineer`: Phase F — defaults flip, manager release.
-- `release-engineer`: fork `v1.4.0` + manager `v0.11.0` cuts.
+- `release-engineer`: fork `v1.5.0` + manager `v0.11.0` cuts.
 - `qa-test-engineer`: full detection-matrix verification across the four layout types + refactoring conflict/safety scenarios.
 - `docs-engineer`: README + Help.md updates for v0.11.0, including new refactoring tools and consolidated `find_*` surface.
