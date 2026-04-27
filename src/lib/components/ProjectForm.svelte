@@ -92,6 +92,9 @@
     });
     if (typeof selected === "string") {
       workspaceFile = selected;
+      // Reset the "already discovered this file" guard so Discover re-enables
+      // even if the user re-picks the same file (e.g. dialog double-click).
+      lastDiscoveredFile = "";
     }
   }
 
