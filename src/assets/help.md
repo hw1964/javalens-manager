@@ -104,6 +104,19 @@ Each of these opens a **target picker**: check Cursor / Claude / Antigravity / I
 
 **Cursor (length limit):** Cursor rejects tools when `serverName + ":" + toolName` exceeds about **59–60** characters. The manager keeps the generated `jl-` ids short so the longest JavaLens tool names still fit. **Antigravity** instead caps the total *number* of MCP tools registered across all servers (around 100 in current builds) — that is a separate constraint, and the main reason to keep concurrent workspaces small.
 
+### Tool surface (fork v1.5.0)
+
+JavaLens v1.5.0 registers **55 tools per workspace service** (down from 66 in v1.4.0). Two parametric tools replaced 13 narrow ones so multi-workspace setups have headroom under Antigravity's 100-tool cap.
+
+- **`find_pattern_usages(kind, query)`** — type-anchored searches. `kind ∈ { annotation, instantiation, type_argument, cast, instanceof }`. Replaces `find_annotation_usages` / `find_type_instantiations` / `find_type_arguments` / `find_casts` / `find_instanceof_checks`.
+- **`find_quality_issue(kind, ...)`** — code-quality analyses. `kind ∈ { naming, bugs, unused, large_classes, circular_deps, reflection, throws, catches }`. Replaces `find_naming_violations` / `find_possible_bugs` / `find_unused_code` / `find_large_classes` / `find_circular_dependencies` / `find_reflection_usage` / `find_throws_declarations` / `find_catch_blocks`.
+
+Each parametric tool's `kind` is a typed enum in the input schema with per-kind descriptions, so agents can discover what's available through `tools/list`.
+
+`find_method_references` and the position-anchored search tools (`find_references`, `find_implementations`, `find_field_writes`, `find_tests`) stay as separate tools — their parameter shapes don't fit the consolidated kind-dispatched pattern.
+
+Coming in fork **v1.5.1** (LTK structural refactorings — Sprint 11 Phase E): `move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`. The manager will pick those up automatically through release-repo polling once the fork tag lands.
+
 ### Selected Project Status
 
 When you click a project row, the bottom strip shows **Name**, **Project path**, **Workspace**, the **PID** of that workspace's JavaLens process (if running), and the **Phase / Health** detail from the runtime. Multiple projects in the same workspace share a PID. Use the refresh icon on that strip to re-query without switching views.
