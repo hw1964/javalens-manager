@@ -195,8 +195,36 @@
     <div class="section-intro">
       <h2>Register Project</h2>
       <p class="muted">
-        Pick a Java project folder and assign a project port.
+        Pick a workspace, then a Java project folder.
       </p>
+    </div>
+
+    <div class="workspace-picker">
+      <label class="field">
+        <span>Workspace</span>
+        <select
+          bind:value={workspaceSelection}
+          disabled={disabled}
+          on:change={() => (userTouchedWorkspace = true)}
+        >
+          <option value="__new__">+ New workspace…</option>
+          {#each existingWorkspaceNames as ws}
+            <option value={ws}>{ws}</option>
+          {/each}
+        </select>
+      </label>
+
+      {#if workspaceSelection === "__new__"}
+        <label class="field">
+          <span>New workspace name</span>
+          <input
+            bind:value={newWorkspaceName}
+            disabled={disabled}
+            placeholder="workspace-default"
+            on:input={() => (userTouchedWorkspace = true)}
+          />
+        </label>
+      {/if}
     </div>
 
     <label class="field">
@@ -217,32 +245,6 @@
       </div>
     </label>
 
-    <label class="field">
-      <span>Workspace</span>
-      <select
-        bind:value={workspaceSelection}
-        disabled={disabled}
-        on:change={() => (userTouchedWorkspace = true)}
-      >
-        <option value="__new__">New workspace…</option>
-        {#each existingWorkspaceNames as ws}
-          <option value={ws}>{ws}</option>
-        {/each}
-      </select>
-    </label>
-
-    {#if workspaceSelection === "__new__"}
-      <label class="field">
-        <span>New workspace name</span>
-        <input
-          bind:value={newWorkspaceName}
-          disabled={disabled}
-          placeholder="workspace-default"
-          on:input={() => (userTouchedWorkspace = true)}
-        />
-      </label>
-    {/if}
-
     <button class:primary={!disabled && canSubmit} disabled={disabled || !canSubmit} type="submit">Save project</button>
   </section>
 
@@ -250,8 +252,8 @@
 
   <section class="stack">
     <div class="section-intro">
-      <h2>Import VSCode Workspace</h2>
-      <p class="muted">Discover Maven/Gradle and Eclipse/PDE Java projects from a .code-workspace.</p>
+      <h2>Import from VSCode Workspace</h2>
+      <p class="muted">Discover Maven/Gradle and Eclipse/PDE Java projects from a .code-workspace file. The selected projects join the workspace chosen above.</p>
     </div>
 
     <label class="field">
