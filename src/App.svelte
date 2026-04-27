@@ -27,6 +27,12 @@
    * forms stay in sync. Defaults to the first existing workspace if
    * one exists, else empty (prompts the user to create one). */
   let activeWorkspaceName: string = "";
+  /** Workspaces that exist in the UI but have no projects yet —
+   * typically just-created via "+ New workspace…". They aren't in
+   * projects.json so we keep them pinned client-side for the session
+   * so the user can switch back to them. They graduate to "real" once
+   * a project is added; they vanish if explicitly deleted. */
+  let pinnedEmptyWorkspaces = new Set<string>();
   let leftPanelWidth = 320;
   let isDraggingSplitter = false;
   let isCompactLayout = false;
@@ -38,14 +44,43 @@
   let unlistenQuitRequested: (() => void) | undefined;
 
   $: selectedProject = $appStore.projects?.find((project) => project.id === $appStore.selectedProjectId);
-  $: existingWorkspaceNames = Array.from(new Set(($appStore.projects ?? []).map((p) => p.workspaceName))).sort();
+  $: workspacesWithProjects = Array.from(
+    new Set(($appStore.projects ?? []).map((p) => p.workspaceName))
+  ).sort();
+  /** All workspaces the UI knows about — those with projects plus any
+   * pinned empties (newly-created via the "+ New workspace…" inline
+   * action). Sorted alphabetically, deduped. */
+  $: knownWorkspaces = (() => {
+    const all = new Set<string>(workspacesWithProjects);
+    for (const name of pinnedEmptyWorkspaces) all.add(name);
+    if (activeWorkspaceName) all.add(activeWorkspaceName);
+    return Array.from(all).filter((s) => s.length > 0).sort();
+  })();
   // Default the active workspace once we have data: prefer the manager's
   // suggestion (most recent), else the first existing, else stays empty.
   $: if (!activeWorkspaceName) {
     if ($appStore.suggestedWorkspaceName) {
       activeWorkspaceName = $appStore.suggestedWorkspaceName;
-    } else if (existingWorkspaceNames.length > 0) {
-      activeWorkspaceName = existingWorkspaceNames[0];
+    } else if (workspacesWithProjects.length > 0) {
+      activeWorkspaceName = workspacesWithProjects[0];
+    }
+  }
+  // When projects.json picks up a newly-active workspace (the user
+  // actually added a project to it), drop it from the pinned-empty set.
+  $: for (const name of workspacesWithProjects) {
+    if (pinnedEmptyWorkspaces.has(name)) {
+      pinnedEmptyWorkspaces.delete(name);
+      pinnedEmptyWorkspaces = pinnedEmptyWorkspaces;
+    }
+  }
+
+  function activateWorkspace(name: string) {
+    activeWorkspaceName = name;
+    // If the workspace has no projects yet, pin it so it stays visible
+    // when the user switches to a different workspace and back.
+    if (!workspacesWithProjects.includes(name)) {
+      pinnedEmptyWorkspaces.add(name);
+      pinnedEmptyWorkspaces = pinnedEmptyWorkspaces;
     }
   }
   $: selectedStatus = selectedProject
@@ -79,7 +114,7 @@
   // Sprint 10 v0.10.4: workspace + project count summary, shown next to
   // the runtime subtitle so the user sees managed scope at a glance.
   $: workspaceSubtitle = (() => {
-    const wsCount = existingWorkspaceNames.length;
+    const wsCount = knownWorkspaces.length;
     const projCount = $appStore.projects?.length ?? 0;
     if (wsCount === 0 && projCount === 0) return "no workspaces yet";
     return `${wsCount} workspace${wsCount === 1 ? "" : "s"} · ${projCount} project${projCount === 1 ? "" : "s"}`;
@@ -346,7 +381,8 @@
             <WorkspaceList
               activeWorkspaceName={activeWorkspaceName}
               disabled={$appStore.isBusy}
-              onSelect={(name) => (activeWorkspaceName = name)}
+              knownWorkspaces={knownWorkspaces}
+              onSelect={activateWorkspace}
               projects={$appStore.projects ?? []}
               runtimeStatuses={$appStore.runtimeStatuses ?? {}}
             />
@@ -380,7 +416,15 @@
               onDeploy={(mode, targetClients) => appStore.deployToAgents(mode, targetClients)}
               onSetWorkspace={(projectId, workspaceName) => appStore.setProjectWorkspaceEntry(projectId, workspaceName)}
               onRenameWorkspace={(oldName, newName) => appStore.renameWorkspaceEntry(oldName, newName)}
-              onDeleteWorkspace={(name) => appStore.deleteWorkspaceEntry(name)}
+              onDeleteWorkspace={(name) => {
+                appStore.deleteWorkspaceEntry(name);
+                pinnedEmptyWorkspaces.delete(name);
+                pinnedEmptyWorkspaces = pinnedEmptyWorkspaces;
+                if (activeWorkspaceName === name) {
+                  activeWorkspaceName = workspacesWithProjects.find((n) => n !== name) ?? "";
+                }
+              }}
+              knownWorkspaces={knownWorkspaces}
               deployTargetDefaults={$appStore.settings?.deployTargets ?? { cursor: true, claude: true, antigravity: true, intellij: true }}
               deployBusy={$appStore.deployBusy ?? false}
               deployError={$appStore.deployError}

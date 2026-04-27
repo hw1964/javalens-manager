@@ -26,6 +26,10 @@
   export let onSetWorkspace: (projectId: string, workspaceName: string) => void;
   export let onRenameWorkspace: (oldName: string, newName: string) => void;
   export let onDeleteWorkspace: (workspaceName: string) => void;
+  /** All workspaces the UI knows about — for the Move dropdown and
+   * for rendering empty workspace cards (newly-created without
+   * projects). Owner is App.svelte. */
+  export let knownWorkspaces: string[] = [];
   export let onDeploy: (mode: DeployMode, targetClients?: string[]) => void;
   export let deployTargetDefaults: DeployTargetFlags = {
     cursor: true,
@@ -57,6 +61,13 @@
   let renamingWorkspace: string | null = null;
   let renameDraft = "";
   let renameError = "";
+  /** Which project's "Move…" dropdown is open (null = none). One row
+   * at a time; clicking Move on another row replaces the open one. */
+  let movingProjectId: string | null = null;
+  /** Selection in the Move dropdown. Special value `"__new__"` means
+   * the user is typing a new workspace name in moveNewName. */
+  let moveSelection = "";
+  let moveNewName = "";
 
   function registerRow(node: HTMLElement, projectId: string) {
     rowRefs[projectId] = node;
@@ -151,16 +162,32 @@
     return null;
   }
 
-  /** Sprint 10 v0.10.4: prompt for a new workspace name and move the
-   * project. */
-  function moveProjectToWorkspace(project: ProjectRecord) {
-    const target = window.prompt(
-      `Move "${project.name}" to which workspace?\nCurrently in: ${project.workspaceName}`,
-      project.workspaceName
-    );
-    if (target && target.trim().length > 0 && target.trim() !== project.workspaceName) {
-      onSetWorkspace(project.id, target.trim());
+  /** Sprint 10 v0.10.4: open the inline Move dropdown for a project.
+   * Replaces the old window.prompt() — we already know the workspace
+   * names from `knownWorkspaces` so the user picks rather than types. */
+  function openMoveDropdown(project: ProjectRecord) {
+    movingProjectId = project.id;
+    // Default to the first workspace that isn't this project's current.
+    const others = knownWorkspaces.filter((n) => n !== project.workspaceName);
+    moveSelection = others[0] ?? "__new__";
+    moveNewName = "";
+  }
+
+  function cancelMove() {
+    movingProjectId = null;
+    moveSelection = "";
+    moveNewName = "";
+  }
+
+  function commitMove(project: ProjectRecord) {
+    let target =
+      moveSelection === "__new__" ? moveNewName.trim() : moveSelection;
+    if (!target || target === project.workspaceName) {
+      cancelMove();
+      return;
     }
+    onSetWorkspace(project.id, target);
+    cancelMove();
   }
 
   function toggleWorkspaceCollapsed(name: string) {
@@ -252,38 +279,43 @@
   $: runningProjects = projects.filter((project) => runtimeStatuses[project.id]?.phase === "running").length;
   $: stoppedProjects = totalProjects - runningProjects;
 
-  /** Sprint 10 v0.10.4: group projects by workspace_name, preserving
-   * insertion order, and compute per-workspace aggregate status.
-   * Defensively dedupes by project.id — duplicates can sneak into
-   * projects.json after migrations or manual edits, and the keyed
-   * {#each} block downstream requires unique keys. */
+  /** Sprint 10 v0.10.4: group projects by workspace_name and compute
+   * per-workspace aggregate status. Includes every workspace from
+   * `knownWorkspaces` even when it has zero projects (so a newly-
+   * created empty workspace is visible on both sides). Sorted
+   * alphabetically. Defensively dedupes by project.id. */
   $: groupedWorkspaces = (() => {
     const seenIds = new Set<string>();
-    const order: string[] = [];
     const byName: Record<string, ProjectRecord[]> = {};
+    // Seed every known workspace (so empties are rendered too).
+    for (const name of knownWorkspaces) {
+      byName[name] = [];
+    }
     for (const project of projects) {
-      if (seenIds.has(project.id)) {
-        continue;
-      }
+      if (seenIds.has(project.id)) continue;
       seenIds.add(project.id);
       const name = project.workspaceName || "workspace-default";
       if (!byName[name]) {
-        order.push(name);
         byName[name] = [];
       }
       byName[name].push(project);
     }
+    const order = Object.keys(byName).sort();
     return order.map((name) => {
       const ws_projects = byName[name];
       const ws_phases = ws_projects.map(
         (p) => runtimeStatuses[p.id]?.phase ?? "stopped"
       );
+      // Empty workspaces are "stopped" by definition; otherwise derive
+      // from member project phases.
       const ws_phase =
-        ws_phases.every((ph) => ph === "running")
-          ? "running"
-          : ws_phases.every((ph) => ph === "stopped")
-            ? "stopped"
-            : "starting";
+        ws_phases.length === 0
+          ? "stopped"
+          : ws_phases.every((ph) => ph === "running")
+            ? "running"
+            : ws_phases.every((ph) => ph === "stopped")
+              ? "stopped"
+              : "starting";
       const ws_running = ws_projects.filter(
         (p) => runtimeStatuses[p.id]?.phase === "running"
       ).length;
@@ -509,6 +541,9 @@
           {/if}
           {#if !collapsed}
             <div class="workspace-projects stack">
+              {#if workspace.projects.length === 0}
+                <p class="muted empty-workspace-hint">No projects in this workspace yet. Add one on the left, or move existing projects here from another workspace's "Move…" menu.</p>
+              {/if}
               {#each workspace.projects as project (project.id)}
                 {@const status = runtimeStatuses[project.id]}
                 <article
@@ -548,7 +583,7 @@
                         <button disabled={disabled} on:click={() => onStop(project.id)} type="button">
                           Stop
                         </button>
-                        <button disabled={disabled} on:click={() => moveProjectToWorkspace(project)} type="button">
+                        <button disabled={disabled} on:click={() => openMoveDropdown(project)} type="button">
                           Move…
                         </button>
                         <button disabled={disabled} on:click={() => onDelete(project.id)} type="button">
@@ -557,6 +592,31 @@
                       </div>
                     </div>
                   </div>
+                  {#if movingProjectId === project.id}
+                    {@const otherWorkspaces = knownWorkspaces.filter((n) => n !== project.workspaceName)}
+                    <div class="move-dropdown">
+                      <span class="move-dropdown-label">Move to:</span>
+                      <select bind:value={moveSelection} disabled={disabled}>
+                        {#each otherWorkspaces as ws}
+                          <option value={ws}>{ws}</option>
+                        {/each}
+                        <option value="__new__">+ New workspace…</option>
+                      </select>
+                      {#if moveSelection === "__new__"}
+                        <input
+                          bind:value={moveNewName}
+                          disabled={disabled}
+                          placeholder="New workspace name"
+                          on:keydown={(e) => {
+                            if (e.key === "Enter") { e.preventDefault(); commitMove(project); }
+                            else if (e.key === "Escape") { e.preventDefault(); cancelMove(); }
+                          }}
+                        />
+                      {/if}
+                      <button disabled={disabled} on:click={() => commitMove(project)} type="button">Save</button>
+                      <button disabled={disabled} on:click={cancelMove} type="button">Cancel</button>
+                    </div>
+                  {/if}
                   {#if projectErrors[project.id]}
                     <p class="project-error">{projectErrors[project.id]}</p>
                   {:else if extractProjectError(status)}

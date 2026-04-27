@@ -6,23 +6,30 @@
   export let activeWorkspaceName: string;
   export let disabled = false;
   export let onSelect: (workspaceName: string) => void;
+  /** All workspaces the UI knows about, including pinned empty ones
+   * (newly-created via "+ New workspace…" with no projects yet).
+   * Sorted, deduped — owner is App.svelte. */
+  export let knownWorkspaces: string[] = [];
 
   /** Unsaved name for the "+ New workspace" inline input. Bound to the
    * input only when isCreating === true. */
   let isCreating = false;
   let newName = "";
 
-  /** Per-workspace summary computed from the project list. */
+  /** Per-workspace summary derived from the union of `knownWorkspaces`
+   * and `projects`: every known workspace renders a row, even if it has
+   * no projects yet. */
   $: workspaceSummary = (() => {
     const byName: Record<
       string,
       { count: number; running: number }
     > = {};
-    const order: string[] = [];
+    for (const name of knownWorkspaces) {
+      byName[name] = { count: 0, running: 0 };
+    }
     for (const project of projects) {
       const name = project.workspaceName || "workspace-default";
       if (!byName[name]) {
-        order.push(name);
         byName[name] = { count: 0, running: 0 };
       }
       byName[name].count += 1;
@@ -30,17 +37,21 @@
         byName[name].running += 1;
       }
     }
-    return order.map((name) => ({
-      name,
-      count: byName[name].count,
-      running: byName[name].running,
-      phase:
-        byName[name].running === byName[name].count && byName[name].count > 0
-          ? "running"
-          : byName[name].running === 0
+    return Object.keys(byName)
+      .sort()
+      .map((name) => ({
+        name,
+        count: byName[name].count,
+        running: byName[name].running,
+        phase:
+          byName[name].count === 0
             ? "stopped"
-            : "starting",
-    }));
+            : byName[name].running === byName[name].count
+              ? "running"
+              : byName[name].running === 0
+                ? "stopped"
+                : "starting",
+      }));
   })();
 
   function startCreate() {
