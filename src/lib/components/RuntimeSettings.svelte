@@ -581,8 +581,14 @@
               on:input={handleBoundEdit}
               placeholder="/path/to/javalens.jar"
               required={runtimeKind === "localJar"}
+              title="Absolute path to a local javalens.jar (overrides the managed runtime)"
             />
-            <button disabled={interactionDisabled} on:click={chooseLocalJar} type="button">Browse</button>
+            <button
+              disabled={interactionDisabled}
+              on:click={chooseLocalJar}
+              title="Open a file picker to select a local javalens.jar"
+              type="button"
+            >Browse</button>
           </div>
         </label>
       {/if}
@@ -602,7 +608,12 @@
 
       {#if updatePolicy === "ask" && releaseStatus?.updateAvailable}
         <div class="actions">
-          <button disabled={interactionDisabled} on:click={() => dispatch("download")} type="button">
+          <button
+            disabled={interactionDisabled}
+            on:click={() => dispatch("download")}
+            title="Download and install the latest javalens release from the configured source"
+            type="button"
+          >
             Download update v{releaseStatus.latestVersion}
           </button>
         </div>
@@ -621,6 +632,7 @@
         <button
           disabled={disabled || serviceProbeBusy}
           on:click={() => dispatch("probeServices")}
+          title="Spawn javalens, run an MCP handshake, and list the exposed tools"
           type="button"
         >
           {serviceProbeBusy ? "Testing..." : "Test Services"}
@@ -680,11 +692,17 @@
                 on:input={handleBoundEdit}
                 placeholder="/path/to/manager/data/root"
                 required
+                title="Folder where the manager stores per-workspace JDT indexes and logs"
               />
-              <button disabled={interactionDisabled} on:click={chooseDataRoot} type="button">Browse</button>
+              <button
+                disabled={interactionDisabled}
+                on:click={chooseDataRoot}
+                title="Open a folder picker for the manager data root"
+                type="button"
+              >Browse</button>
             </div>
           </label>
-          <label class="checkbox-row compact">
+          <label class="checkbox-row compact" title="When enabled, closing the window keeps the manager running in the system tray">
             <input bind:checked={useSystemTray} disabled={interactionDisabled} on:change={handleBoundEdit} type="checkbox" />
             <span>Use system tray</span>
           </label>
@@ -719,6 +737,7 @@
                   "Delete all manager runtime logs? This keeps project registrations and settings.",
                   "cleanLogs"
                 )}
+              title="Delete all manager runtime logs. Keeps registrations and settings."
               type="button"
             >
               Clean logs
@@ -730,6 +749,7 @@
                   "Delete all manager workspace/index caches? This keeps project registrations and settings.",
                   "cleanWorkspaces"
                 )}
+              title="Delete cached JDT workspace indexes. Keeps registrations and settings."
               type="button"
             >
               Clean workspaces
@@ -741,6 +761,7 @@
                   "Start from scratch by deleting generated logs + workspaces? Stop running runtimes first.",
                   "cleanGeneratedData"
                 )}
+              title="Delete logs and workspace caches in one step. Stop runtimes first."
               type="button"
             >
               Start from scratch
@@ -763,7 +784,12 @@
           <h3>MCP Config Locations</h3>
           <p class="muted">Review detected config paths and set optional manual overrides.</p>
         </div>
-        <button disabled={interactionDisabled} on:click={() => dispatch("redetectMcpPaths")} type="button">
+        <button
+          disabled={interactionDisabled}
+          on:click={() => dispatch("redetectMcpPaths")}
+          title="Re-scan the system for default MCP config files for each client"
+          type="button"
+        >
           Redetect defaults
         </button>
       </div>
@@ -809,10 +835,21 @@
               disabled={interactionDisabled}
               on:input={(event) => setManualMcpPath(key, (event.currentTarget as HTMLInputElement).value)}
               placeholder="Manual override path"
+              title="Manual override for this client's MCP config file (leave empty to use the auto-detected default)"
               value={entry?.manualOverridePath ?? ""}
             />
-            <button disabled={interactionDisabled} on:click={() => chooseMcpPath(key)} type="button">Browse</button>
-            <button disabled={interactionDisabled} on:click={() => clearManualMcpPath(key)} type="button">Clear</button>
+            <button
+              disabled={interactionDisabled}
+              on:click={() => chooseMcpPath(key)}
+              title="Open a file picker to choose this client's MCP config file"
+              type="button"
+            >Browse</button>
+            <button
+              disabled={interactionDisabled}
+              on:click={() => clearManualMcpPath(key)}
+              title="Clear the manual override and fall back to the auto-detected path"
+              type="button"
+            >Clear</button>
           </div>
         </div>
       {/each}
@@ -826,7 +863,7 @@
         </select>
       </label>
 
-      <label class="checkbox-row">
+      <label class="checkbox-row" title="Write a .bak copy of each MCP config file before deploying changes">
         <input bind:checked={mcpBackupBeforeWrite} disabled={interactionDisabled} on:change={handleBoundEdit} type="checkbox" />
         <span>Create backup before MCP config write</span>
       </label>
@@ -845,6 +882,7 @@
     class="save-settings-button"
     disabled={interactionDisabled || !isDirty}
     on:click={handleSave}
+    title="Persist all settings changes to disk"
     type="button"
   >
     Save settings

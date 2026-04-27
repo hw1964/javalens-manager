@@ -252,6 +252,12 @@ export interface RenameWorkspaceInput {
   newName: string;
 }
 
+/** Sprint 10 v0.10.4: input for renaming a project's display name. */
+export interface RenameProjectInput {
+  projectId: string;
+  name: string;
+}
+
 /** Candidate project found during workspace discovery. */
 export interface WorkspaceProjectCandidate {
   name: string;
@@ -301,6 +307,11 @@ export function renameWorkspace(input: RenameWorkspaceInput): Promise<ManagerDas
  * data dir on disk. */
 export function deleteWorkspace(workspaceName: string): Promise<ManagerDashboard> {
   return invoke("delete_workspace", { workspaceName });
+}
+
+/** Sprint 10 v0.10.4: rename a project's human-readable name. */
+export function renameProject(input: RenameProjectInput): Promise<ManagerDashboard> {
+  return invoke("rename_project", { input });
 }
 
 /** Deletes a project by its ID. */

@@ -32,6 +32,7 @@
   export let onDeleteAll: () => void;
   /** Sprint 10 v0.10.4: move a project to a different (existing or new) workspace. */
   export let onSetWorkspace: (projectId: string, workspaceName: string) => void;
+  export let onRenameProject: (projectId: string, name: string) => void;
   export let onRenameWorkspace: (oldName: string, newName: string) => void;
   export let onDeleteWorkspace: (workspaceName: string) => void;
   /** All workspaces the UI knows about — for the Move dropdown and
@@ -80,15 +81,50 @@
   /** Currently-open right-click context menu. Closed = null. */
   let contextMenu: { x: number; y: number; items: ContextMenuItem[] } | null = null;
 
+  /** Inline rename state for a project's display name (h3 → input). */
+  let renamingProjectId: string | null = null;
+  let projectRenameDraft = "";
+
+  function startRenameProject(project: ProjectRecord) {
+    renamingProjectId = project.id;
+    projectRenameDraft = project.name;
+  }
+
+  function commitRenameProject(project: ProjectRecord) {
+    const trimmed = projectRenameDraft.trim();
+    if (trimmed.length > 0 && trimmed !== project.name) {
+      onRenameProject(project.id, trimmed);
+    }
+    renamingProjectId = null;
+    projectRenameDraft = "";
+  }
+
+  function cancelRenameProject() {
+    renamingProjectId = null;
+    projectRenameDraft = "";
+  }
+
+  function handleProjectRenameKeydown(event: KeyboardEvent, project: ProjectRecord) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitRenameProject(project);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      cancelRenameProject();
+    }
+  }
+
   function openProjectContextMenu(event: MouseEvent, project: ProjectRecord) {
     event.preventDefault();
+    event.stopPropagation();
     if (disabled) return;
     contextMenu = {
       x: event.clientX,
       y: event.clientY,
       items: [
-        { label: "Start", onSelect: () => onStart(project.id) },
-        { label: "Stop", onSelect: () => onStop(project.id) },
+        { label: "Start project", onSelect: () => onStart(project.id) },
+        { label: "Stop project", onSelect: () => onStop(project.id) },
+        { label: "Rename project", onSelect: () => startRenameProject(project) },
         { label: "Move to workspace…", onSelect: () => openMoveDropdown(project) },
         {
           label: "Delete project",
@@ -104,6 +140,7 @@
     workspace: { name: string; projects: ProjectRecord[] },
   ) {
     event.preventDefault();
+    event.stopPropagation();
     if (disabled) return;
     contextMenu = {
       x: event.clientX,
@@ -423,13 +460,28 @@
       </div>
     </div>
     <div class="project-list-toolbar segmented-actions">
-      <button disabled={disabled || projects.length === 0} on:click={() => onStartAll()} type="button">
+      <button
+        disabled={disabled || projects.length === 0}
+        on:click={() => onStartAll()}
+        title="Start every workspace's javalens process"
+        type="button"
+      >
         Start all
       </button>
-      <button disabled={disabled || projects.length === 0} on:click={() => onStopAll()} type="button">
+      <button
+        disabled={disabled || projects.length === 0}
+        on:click={() => onStopAll()}
+        title="Stop every running javalens process"
+        type="button"
+      >
         Stop all
       </button>
-      <button disabled={disabled || projects.length === 0} on:click={handleDeleteAll} type="button">
+      <button
+        disabled={disabled || projects.length === 0}
+        on:click={handleDeleteAll}
+        title="Remove every project and workspace from the manager"
+        type="button"
+      >
         Delete all
       </button>
     </div>
@@ -442,6 +494,7 @@
       class:active={highlightedDeployMode === "deploy"}
       disabled={disabled || deployBusy}
       on:click={() => openDeployTargetPicker("deploy")}
+      title="Write managed MCP server entries into selected agent config files"
       type="button"
     >
       {deployBusy ? "Deploying..." : "Deploy to Agents"}
@@ -450,6 +503,7 @@
       class:active={highlightedDeployMode === "dryRun"}
       disabled={disabled || deployBusy}
       on:click={() => openDeployTargetPicker("dryRun")}
+      title="Preview the changes that Deploy would make, without writing"
       type="button"
     >
       Dry run
@@ -458,6 +512,7 @@
       class:active={highlightedDeployMode === "regenerate"}
       disabled={disabled || deployBusy}
       on:click={() => openDeployTargetPicker("regenerate")}
+      title="Force-rewrite the managed section even if unchanged"
       type="button"
     >
       Regenerate
@@ -466,6 +521,7 @@
       class:active={highlightedDeployMode === "delete"}
       disabled={disabled || deployBusy}
       on:click={() => openDeployTargetPicker("delete")}
+      title="Remove the manager's MCP entries from the selected agent config files"
       type="button"
     >
       Delete
@@ -578,6 +634,7 @@
               <button
                 disabled={disabled}
                 on:click={() => startWorkspace(workspace.projects)}
+                title="Start the javalens process for this workspace (loads every project under its name)"
                 type="button"
               >
                 Start workspace
@@ -585,6 +642,7 @@
               <button
                 disabled={disabled}
                 on:click={() => stopWorkspace(workspace.projects)}
+                title="Stop the javalens process for this workspace"
                 type="button"
               >
                 Stop workspace
@@ -592,6 +650,7 @@
               <button
                 disabled={disabled}
                 on:click={() => handleDeleteWorkspace(workspace.name, workspace.projects.length)}
+                title="Delete this workspace and remove its projects from the manager"
                 type="button"
               >
                 Delete workspace
@@ -616,9 +675,26 @@
                 >
                   <div class="project-row">
                     <div class="project-left">
-                      <button class="select" on:click={() => onSelect(project.id)} type="button">
-                        <h3>{project.name}</h3>
-                      </button>
+                      {#if renamingProjectId === project.id}
+                        <input
+                          aria-label="Rename project"
+                          bind:value={projectRenameDraft}
+                          class="project-rename-input"
+                          on:blur={() => commitRenameProject(project)}
+                          on:keydown={(e) => handleProjectRenameKeydown(e, project)}
+                          title="Press Enter to save, Esc to cancel"
+                          autofocus
+                        />
+                      {:else}
+                        <button
+                          class="select"
+                          on:click={() => onSelect(project.id)}
+                          title="Select this project (right-click for actions)"
+                          type="button"
+                        >
+                          <h3>{project.name}</h3>
+                        </button>
+                      {/if}
                       <p class="path" title={project.projectPath}>{project.projectPath}</p>
                     </div>
 
@@ -629,7 +705,7 @@
                           class="icon-refresh"
                           disabled={disabled}
                           on:click={() => onRefresh(project.id)}
-                          title="Refresh status"
+                          title="Refresh status from runtime"
                           type="button"
                         >
                           ↻
@@ -640,16 +716,28 @@
                         </span>
                       </div>
                       <div class="actions row-actions">
-                        <button disabled={disabled} on:click={() => onStart(project.id)} type="button">
+                        <button
+                          disabled={disabled}
+                          on:click={() => onStart(project.id)}
+                          title="Start this project (joins the workspace's javalens process)"
+                          type="button"
+                        >
                           Start
                         </button>
-                        <button disabled={disabled} on:click={() => onStop(project.id)} type="button">
+                        <button
+                          disabled={disabled}
+                          on:click={() => onStop(project.id)}
+                          title="Stop this project (process keeps running for other members; killed when last member leaves)"
+                          type="button"
+                        >
                           Stop
                         </button>
-                        <button disabled={disabled} on:click={() => openMoveDropdown(project)} type="button">
-                          Move…
-                        </button>
-                        <button disabled={disabled} on:click={() => onDelete(project.id)} type="button">
+                        <button
+                          disabled={disabled}
+                          on:click={() => onDelete(project.id)}
+                          title="Remove this project from the manager"
+                          type="button"
+                        >
                           Delete
                         </button>
                       </div>
@@ -659,7 +747,11 @@
                     {@const otherWorkspaces = knownWorkspaces.filter((n) => n !== project.workspaceName)}
                     <div class="move-dropdown">
                       <span class="move-dropdown-label">Move to:</span>
-                      <select bind:value={moveSelection} disabled={disabled}>
+                      <select
+                        bind:value={moveSelection}
+                        disabled={disabled}
+                        title="Pick a destination workspace for this project"
+                      >
                         {#each otherWorkspaces as ws}
                           <option value={ws}>{ws}</option>
                         {/each}
@@ -670,14 +762,25 @@
                           bind:value={moveNewName}
                           disabled={disabled}
                           placeholder="New workspace name"
+                          title="Name the new workspace. Enter to save, Esc to cancel."
                           on:keydown={(e) => {
                             if (e.key === "Enter") { e.preventDefault(); commitMove(project); }
                             else if (e.key === "Escape") { e.preventDefault(); cancelMove(); }
                           }}
                         />
                       {/if}
-                      <button disabled={disabled} on:click={() => commitMove(project)} type="button">Save</button>
-                      <button disabled={disabled} on:click={cancelMove} type="button">Cancel</button>
+                      <button
+                        disabled={disabled}
+                        on:click={() => commitMove(project)}
+                        title="Move this project to the selected workspace"
+                        type="button"
+                      >Save</button>
+                      <button
+                        disabled={disabled}
+                        on:click={cancelMove}
+                        title="Cancel the move"
+                        type="button"
+                      >Cancel</button>
                     </div>
                   {/if}
                   {#if projectErrors[project.id]}

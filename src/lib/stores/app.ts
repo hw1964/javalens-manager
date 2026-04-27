@@ -19,6 +19,7 @@ import {
   setProjectWorkspace as setProjectWorkspaceApi,
   renameWorkspace as renameWorkspaceApi,
   deleteWorkspace as deleteWorkspaceApi,
+  renameProject as renameProjectApi,
   updateSettings,
   type AddProjectInput,
   type CleanupSummary,
@@ -145,6 +146,18 @@ export function createAppStore() {
       syncDashboard(await deleteWorkspaceApi(workspaceName));
     } catch (error) {
       update((state) => ({ ...state, error: String(error) }));
+    } finally {
+      update((state) => ({ ...state, isBusy: false }));
+    }
+  }
+
+  async function renameProjectEntry(projectId: string, name: string) {
+    update((state) => ({ ...state, isBusy: true, error: undefined }));
+    try {
+      syncDashboard(await renameProjectApi({ projectId, name }));
+      clearProjectError(projectId);
+    } catch (error) {
+      setProjectError(projectId, error);
     } finally {
       update((state) => ({ ...state, isBusy: false }));
     }
@@ -541,6 +554,7 @@ export function createAppStore() {
     setProjectWorkspaceEntry,
     renameWorkspaceEntry,
     deleteWorkspaceEntry,
+    renameProjectEntry,
     deleteProjectEntry,
     deleteAllProjectEntries,
     updateManagerSettings,

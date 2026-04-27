@@ -183,7 +183,13 @@
 
     <label class="field">
       <span>Name</span>
-      <input bind:value={name} disabled={disabled || !activeWorkspaceName} placeholder="Defaults to the selected folder name" required />
+      <input
+        bind:value={name}
+        disabled={disabled || !activeWorkspaceName}
+        placeholder="Defaults to the selected folder name"
+        required
+        title="Display name shown in the Dashboard. Auto-fills from the folder if left blank."
+      />
     </label>
 
     <label class="field">
@@ -194,12 +200,23 @@
           disabled={disabled || !activeWorkspaceName}
           placeholder="/path/to/java/project"
           required
+          title="Absolute path to the Java project root (the folder containing pom.xml, build.gradle, or .project)."
         />
-        <button disabled={disabled || !activeWorkspaceName} on:click={chooseProjectFolder} type="button">Browse</button>
+        <button
+          disabled={disabled || !activeWorkspaceName}
+          on:click={chooseProjectFolder}
+          title="Open a folder picker to choose the Java project root"
+          type="button"
+        >Browse</button>
       </div>
     </label>
 
-    <button class:primary={!disabled && canSubmit} disabled={disabled || !canSubmit} type="submit">Save project</button>
+    <button
+      class:primary={!disabled && canSubmit}
+      disabled={disabled || !canSubmit}
+      title="Add this project to the selected workspace"
+      type="submit"
+    >Save project</button>
   </section>
 
   <hr class="section-divider" />
@@ -219,8 +236,18 @@
     <label class="field">
       <span>.code-workspace file</span>
       <div class="field-row">
-        <input bind:value={workspaceFile} disabled={disabled || isImporting} placeholder="/path/to/workspace.code-workspace" />
-        <button disabled={disabled || isImporting} on:click={chooseWorkspaceFile} type="button">Browse</button>
+        <input
+          bind:value={workspaceFile}
+          disabled={disabled || isImporting}
+          placeholder="/path/to/workspace.code-workspace"
+          title="Path to a VSCode .code-workspace file describing the projects to import"
+        />
+        <button
+          disabled={disabled || isImporting}
+          on:click={chooseWorkspaceFile}
+          title="Open a file picker to choose a .code-workspace file"
+          type="button"
+        >Browse</button>
       </div>
     </label>
 
@@ -228,6 +255,7 @@
       class:primary={canDiscover}
       disabled={!canDiscover}
       on:click={discoverFromWorkspace}
+      title="Scan the chosen .code-workspace file for Java projects (Maven/Gradle/Eclipse)"
       type="button"
     >
       Discover
@@ -236,11 +264,12 @@
     {#if candidates.length > 0}
       <div class="stack candidate-list">
         {#each candidates as candidate}
-          <label class="checkbox-row">
+          <label class="checkbox-row" title={candidate.projectPath}>
             <input
               checked={selectedPaths.includes(candidate.projectPath)}
               disabled={disabled || isImporting}
               on:change={() => toggleCandidate(candidate.projectPath)}
+              title="Include this project in the import"
               type="checkbox"
             />
             <span>{candidate.name} ({candidate.kind}) - {candidate.projectPath}</span>
@@ -251,6 +280,7 @@
         class:primary={canImportSelected}
         disabled={!canImportSelected}
         on:click={importSelected}
+        title={`Add ${selectedPaths.length} project(s) to ${activeWorkspaceName || "the selected workspace"}`}
         type="button"
       >
         Import selected

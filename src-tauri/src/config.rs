@@ -498,6 +498,30 @@ impl ConfigStore {
         Ok(updated)
     }
 
+    /// Sprint 10 v0.10.4: rename a project's human-readable name.
+    /// Does NOT change `id`, `project_path`, or `workspace_name` —
+    /// only the `name` field that the dashboard renders.
+    pub fn rename_project(
+        &self,
+        project_id: &str,
+        new_name: String,
+    ) -> Result<ProjectRecord, String> {
+        let trimmed = new_name.trim();
+        if trimmed.is_empty() {
+            return Err("Project name must not be empty".into());
+        }
+        let mut projects = self.projects.lock().expect("projects mutex poisoned");
+        let project = projects
+            .projects
+            .iter_mut()
+            .find(|p| p.id == project_id)
+            .ok_or_else(|| format!("Unknown project id: {project_id}"))?;
+        project.name = trimmed.to_string();
+        let updated = project.clone();
+        write_json(&self.paths.projects_file, &*projects)?;
+        Ok(updated)
+    }
+
     /// Sprint 10 v0.10.4: rename a workspace. Updates every ProjectRecord
     /// whose `workspace_name` matches `old_name` to `new_name`. The caller
     /// is responsible for moving the JDT data dir on disk and updating

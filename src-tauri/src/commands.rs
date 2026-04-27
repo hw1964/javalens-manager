@@ -2,8 +2,9 @@ use crate::{
     config::{AddProjectInput, ProjectRecord, UpdateSettingsInput},
     manager_service::{
         CleanupSummary, DeployToAgentsInput, DeployToAgentsResult, ManagerDashboard,
-        RenameWorkspaceInput, ServiceProbeResult, ServicesInventory, SetProjectWorkspaceInput,
-        WorkspaceImportInput, WorkspaceImportResult, WorkspaceProjectCandidate,
+        RenameProjectInput, RenameWorkspaceInput, ServiceProbeResult, ServicesInventory,
+        SetProjectWorkspaceInput, WorkspaceImportInput, WorkspaceImportResult,
+        WorkspaceProjectCandidate,
     },
     runtime_manager::RuntimeStatusRecord,
     AppState,
@@ -54,6 +55,14 @@ pub fn rename_workspace(
     input: RenameWorkspaceInput,
 ) -> Result<ManagerDashboard, String> {
     state.manager_service.rename_workspace(input)
+}
+
+#[tauri::command]
+pub fn rename_project(
+    state: State<'_, AppState>,
+    input: RenameProjectInput,
+) -> Result<ManagerDashboard, String> {
+    state.manager_service.rename_project(input)
 }
 
 #[tauri::command]

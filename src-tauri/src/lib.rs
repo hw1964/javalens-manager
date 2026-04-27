@@ -210,6 +210,7 @@ pub fn run() {
             commands::set_project_workspace,
             commands::rename_workspace,
             commands::delete_workspace,
+            commands::rename_project,
             commands::delete_project,
             commands::start_all_runtimes,
             commands::stop_all_runtimes,

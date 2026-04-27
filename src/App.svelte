@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
+  import ContextMenu from "./lib/components/ContextMenu.svelte";
   import ProjectForm from "./lib/components/ProjectForm.svelte";
   import ProjectList from "./lib/components/ProjectList.svelte";
   import WorkspaceList from "./lib/components/WorkspaceList.svelte";
@@ -42,6 +43,60 @@
   let dragStartWidth = 0;
   let lastDashboardWidth = 0;
   let unlistenQuitRequested: (() => void) | undefined;
+
+  type ContextMenuItem = {
+    label: string;
+    onSelect: () => void;
+    danger?: boolean;
+    disabled?: boolean;
+  };
+  /** Global context menu (text-field Copy/Cut/Paste/Select all).
+   * Per-component menus stopPropagation so they never reach this. */
+  let globalContextMenu: { x: number; y: number; items: ContextMenuItem[] } | null = null;
+
+  function isEditableTextTarget(el: EventTarget | null): el is HTMLInputElement | HTMLTextAreaElement {
+    if (!(el instanceof HTMLElement)) return false;
+    if (el.tagName === "TEXTAREA") return true;
+    if (el.tagName === "INPUT") {
+      const type = (el as HTMLInputElement).type;
+      return type === "text" || type === "search" || type === "url" || type === "email" || type === "number" || type === "password" || type === "tel" || type === "";
+    }
+    return false;
+  }
+
+  function handleGlobalContextMenu(event: MouseEvent) {
+    // Always suppress the default OS/browser menu (back/forward/inspect-element noise).
+    event.preventDefault();
+    const target = event.target;
+    if (!isEditableTextTarget(target)) {
+      // Not an editable field → no menu at all.
+      globalContextMenu = null;
+      return;
+    }
+    const input = target;
+    const items: ContextMenuItem[] = [
+      {
+        label: "Cut",
+        disabled: input.disabled || input.readOnly || input.selectionStart === input.selectionEnd,
+        onSelect: () => document.execCommand("cut"),
+      },
+      {
+        label: "Copy",
+        disabled: input.selectionStart === input.selectionEnd,
+        onSelect: () => document.execCommand("copy"),
+      },
+      {
+        label: "Paste",
+        disabled: input.disabled || input.readOnly,
+        onSelect: () => document.execCommand("paste"),
+      },
+      {
+        label: "Select all",
+        onSelect: () => input.select(),
+      },
+    ];
+    globalContextMenu = { x: event.clientX, y: event.clientY, items };
+  }
 
   $: selectedProject = $appStore.projects?.find((project) => project.id === $appStore.selectedProjectId);
   $: workspacesWithProjects = Array.from(
@@ -328,6 +383,8 @@
   <title>javalens-manager</title>
 </svelte:head>
 
+<svelte:window on:contextmenu={handleGlobalContextMenu} />
+
 <main class="app-shell full-height-shell">
   <header class="hero panel">
     <div class="header-content">
@@ -437,6 +494,7 @@
               }}
               onDeploy={(mode, targetClients) => appStore.deployToAgents(mode, targetClients)}
               onSetWorkspace={(projectId, workspaceName) => appStore.setProjectWorkspaceEntry(projectId, workspaceName)}
+              onRenameProject={(projectId, name) => appStore.renameProjectEntry(projectId, name)}
               onRenameWorkspace={(oldName, newName) => appStore.renameWorkspaceEntry(oldName, newName)}
               onDeleteWorkspace={(name) => {
                 appStore.deleteWorkspaceEntry(name);
@@ -548,3 +606,12 @@
     </section>
   {/if}
 </main>
+
+{#if globalContextMenu}
+  <ContextMenu
+    items={globalContextMenu.items}
+    onClose={() => (globalContextMenu = null)}
+    x={globalContextMenu.x}
+    y={globalContextMenu.y}
+  />
+{/if}

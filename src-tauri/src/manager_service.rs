@@ -70,6 +70,14 @@ pub struct RenameWorkspaceInput {
     pub new_name: String,
 }
 
+/// Sprint 10 v0.10.4: input for renaming a project's display name.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameProjectInput {
+    pub project_id: String,
+    pub name: String,
+}
+
 /// Input for importing projects from an IDE workspace.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -285,6 +293,16 @@ impl ManagerService {
             }
         }
         self.write_workspace_json_for(&input.workspace_name)?;
+        self.load_dashboard()
+    }
+
+    /// Sprint 10 v0.10.4: rename a project's human-readable name.
+    pub fn rename_project(
+        &self,
+        input: RenameProjectInput,
+    ) -> Result<ManagerDashboard, String> {
+        self.config_store
+            .rename_project(&input.project_id, input.name)?;
         self.load_dashboard()
     }
 

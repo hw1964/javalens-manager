@@ -1,5 +1,13 @@
 <script lang="ts">
   import type { ProjectRecord, RuntimeStatusRecord } from "../api/tauri";
+  import ContextMenu from "./ContextMenu.svelte";
+
+  type ContextMenuItem = {
+    label: string;
+    onSelect: () => void;
+    danger?: boolean;
+    disabled?: boolean;
+  };
 
   export let projects: ProjectRecord[] = [];
   export let runtimeStatuses: Record<string, RuntimeStatusRecord> = {};
@@ -113,6 +121,31 @@
       onDelete(name);
     }
   }
+
+  /** Currently-open right-click context menu. Closed = null. */
+  let contextMenu: { x: number; y: number; items: ContextMenuItem[] } | null = null;
+
+  function openWorkspaceContextMenu(
+    event: MouseEvent,
+    ws: { name: string; count: number },
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (disabled) return;
+    const items: ContextMenuItem[] = [];
+    if (onRename) {
+      items.push({ label: "Rename workspace", onSelect: () => promptRename(ws.name) });
+    }
+    if (onDelete) {
+      items.push({
+        label: "Delete workspace",
+        danger: true,
+        onSelect: () => confirmDelete(ws.name, ws.count),
+      });
+    }
+    if (items.length === 0) return;
+    contextMenu = { x: event.clientX, y: event.clientY, items };
+  }
 </script>
 
 <section class="panel stack workspace-list-panel">
@@ -131,11 +164,14 @@
         <div
           class:active={ws.name === activeWorkspaceName}
           class="workspace-row"
+          on:contextmenu={(e) => openWorkspaceContextMenu(e, ws)}
+          role="presentation"
         >
           <button
             class="workspace-row-select"
             disabled={disabled}
             on:click={() => onSelect(ws.name)}
+            title="Switch to this workspace (right-click for actions)"
             type="button"
           >
             <span class={`status-lamp ${ws.phase}`}></span>
@@ -179,14 +215,20 @@
 
     {#if isCreating}
       <li>
-        <div class="workspace-row workspace-new-row">
+        <div
+          class="workspace-row workspace-new-row"
+          on:contextmenu|preventDefault|stopPropagation
+          role="presentation"
+        >
           <span class="status-lamp stopped"></span>
           <input
             bind:value={newName}
             class="workspace-new-input"
             on:blur={commitCreate}
+            on:contextmenu|preventDefault|stopPropagation
             on:keydown={handleNewKeydown}
             placeholder="New workspace name"
+            title="Type a workspace name. Enter to create, Esc to cancel."
             autofocus
           />
         </div>
@@ -195,8 +237,24 @@
   </ul>
 
   {#if !isCreating}
-    <button class="workspace-add" disabled={disabled} on:click={startCreate} type="button">
+    <button
+      class="workspace-add"
+      disabled={disabled}
+      on:click={startCreate}
+      on:contextmenu|preventDefault|stopPropagation
+      title="Create a new empty workspace"
+      type="button"
+    >
       + New workspace…
     </button>
   {/if}
 </section>
+
+{#if contextMenu}
+  <ContextMenu
+    items={contextMenu.items}
+    onClose={() => (contextMenu = null)}
+    x={contextMenu.x}
+    y={contextMenu.y}
+  />
+{/if}
