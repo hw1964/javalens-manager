@@ -342,6 +342,41 @@ These are also Eclipse/IntelliJ standards but not required for the JATS overhaul
 
 Phase E makes Sprint 11 substantially bigger than originally planned (was ~2 weeks for detection-matrix + cutover; now ~3 weeks with 5 LTK refactorings added). Acceptable because the JATS overhaul depends on these tools and "do them in Sprint 12" would mean an extra fork release for one feature set. If the sprint runs over, the natural cut line is to ship Phases A/B/C/D as `v1.4.0` first, then a fast follow-up `v1.4.1` with Phase E once the LTK plumbing settles.
 
+## Phase G — Manager-side UX workstream (TBD, to be discussed and spec'd)
+
+> **Status: not yet scheduled.** Captured here so the open ideas don't drift; planning + sizing happens after Sprint 11 javalens work locks. This workstream may land alongside manager `v0.11.0` (Phase F) or slide to a later `v0.11.x` depending on scope.
+>
+> Origin: 2026-04-27 UX review of the post-Sprint-10 workspace-first dashboard. Tier 1 + Tier 2 items were folded into the v0.10.4 cycle; Tier 3 + Tier 4 are captured below.
+
+### Tier 3 — workflow improvements
+
+- **G.1 Bulk multi-select + move.** Today the user moves projects one at a time via right-click → "Move to workspace…" or the inline dropdown. With 12 misclassified projects in one workspace, that's 12 actions. Add a checkbox column + shift-click range select + a "Move selected" button. *Spec questions:* checkbox column always-visible vs. revealed on hover; whether multi-select also drives Start/Stop ("Start selected"); behavior when the workspace card is collapsed.
+- **G.2 Drag-drop projects between workspace cards.** Important (user, 2026-04-27). Visual, fast, no prompts: drag a project row, drop on a different workspace header → moves it. *Spec questions:* drag handle vs whole-row; visual affordance during drag (ghost row, drop-zone highlight); cancel-drag UX (Esc and out-of-target both revert); should drop on the "+ New workspace" affordance create-and-move in one gesture.
+- **G.3 Diagnostics card → workspace count.** [`RuntimeSettings.svelte:712`](../src/lib/components/RuntimeSettings.svelte#L712) Diagnostics card today shows config file paths only. Add `Workspaces: N (M running)` so the Settings → Machine card answers "what's loaded" without bouncing to Dashboard. The header subtitle (Tier 1 #5, shipped in v0.10.4) already shows this — Diagnostics is a second context for the same answer.
+
+### Tier 4 — bigger ideas
+
+- **G.4 Per-workspace JDT data dir size.** Show disk footprint in the workspace header — encourages users to delete unused workspaces. Backend: small Tauri command computing size of `<data_root>/workspaces/<name>` (recursive walk). *Spec questions:* refresh cadence (on dashboard load? cached + refresh button?); disk-only for v1 (RAM is per-PID, OS-specific, harder to make portable); whether to surface size in the workspace card on the left or only inside the right-hand grouped view.
+- **G.5 Workspace presets (export/import).** Save a workspace + its project paths as a portable JSON file that can be re-imported on another machine or shared with teammates — without crossing into the networked-service direction ([`sprint-future-networked-service.md`](sprint-future-networked-service.md)). *Spec questions:* preset payload (relative vs absolute paths; environment-variable substitution like `$HOME`); import-time path resolution when files are missing (skip + warn vs error); whether a `.code-workspace` round-trips cleanly through this format.
+- **G.6 First-launch migration banner.** Migration to named workspaces (Sprint 10) happens silently on read; users with auto-derived `workspace-11100` names get no UI nudge to rename or consolidate. Add an unobtrusive banner on first launch after a migration: "Your projects are now grouped into workspaces. Auto-named ones look like `workspace-11100` — rename them in the workspace list on the left." Goes away after first dismiss. *Spec questions:* dismissal storage (localStorage vs a settings field); whether future migrations get their own banner-version key.
+
+### Dropped from the original Tier 3/4 list
+
+- **~~Pre-fill new workspace name from the `.code-workspace` filename.~~** Dropped 2026-04-27. Workflow flipped post-Sprint-10: the user picks a workspace name first, then adds projects to it (including via VSCode-workspace import). The imported `.code-workspace` filename no longer drives workspace identity, so deriving the workspace name from it is the wrong direction.
+
+### Spec / sizing follow-up
+
+Each item above needs a concrete spec before scheduling. Likely order, by user pull and rough size:
+
+1. **G.2 drag-drop** — first to spec, given direct user request 2026-04-27.
+2. **G.1 multi-select + bulk move** — natural sibling to G.2; same checkbox column unlocks both.
+3. **G.4 disk size** — small once we settle disk-only + refresh model.
+4. **G.3 Diagnostics workspace count** — ~30-min tweak once a workspace-counts helper exists for G.4 (the same backend can serve both).
+5. **G.6 migration banner** — small UI; the policy questions (dismissal + versioning) take more time than the code.
+6. **G.5 workspace presets** — biggest; defer until the rest land or until a teammate-share use case forces it.
+
+Once any of these are spec'd, slot in front of Phase F if intended for `v0.11.0`, else schedule against `v0.11.x` and leave Phase F as-is.
+
 ## Phase F — Cutover release
 
 ### F.1 Tag fork v1.4.0
