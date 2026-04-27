@@ -679,6 +679,17 @@ fn read_projects(path: &Path) -> Result<ProjectsFile, String> {
                 migrated = true;
             }
         }
+        // Sprint 10 v0.10.4 cleanup: dedupe by project.id. Earlier
+        // versions could occasionally end up with two records sharing
+        // the same id after manual edits or migration corner cases. The
+        // grouped Dashboard view keys its {#each} blocks by id and
+        // Svelte fails hard on duplicate keys; deduplicating on read
+        // keeps both the UI and the stored file clean. First occurrence
+        // of an id wins.
+        let dropped = dedupe_projects_by_id(&mut projects.projects);
+        if dropped > 0 {
+            migrated = true;
+        }
         if migrated {
             // Best-effort writeback so the next read sees clean data.
             let _ = write_json(path, &projects);
@@ -688,7 +699,7 @@ fn read_projects(path: &Path) -> Result<ProjectsFile, String> {
 
     let legacy = serde_json::from_str::<LegacyProjectsFile>(&contents)
         .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
-    let projects = ProjectsFile {
+    let mut projects = ProjectsFile {
         version: legacy.version.unwrap_or(1),
         projects: legacy
             .projects
@@ -702,8 +713,19 @@ fn read_projects(path: &Path) -> Result<ProjectsFile, String> {
             })
             .collect(),
     };
+    dedupe_projects_by_id(&mut projects.projects);
     let _ = write_json(path, &projects);
     Ok(projects)
+}
+
+/// Sprint 10 v0.10.4: drop ProjectRecord entries whose `id` has already
+/// been seen earlier in the slice. First occurrence wins. Returns the
+/// number of entries removed.
+fn dedupe_projects_by_id(projects: &mut Vec<ProjectRecord>) -> usize {
+    let original_len = projects.len();
+    let mut seen = std::collections::HashSet::new();
+    projects.retain(|p| seen.insert(p.id.clone()));
+    original_len - projects.len()
 }
 
 fn read_settings(path: &Path, paths: &AppPaths) -> Result<ManagerSettings, String> {
@@ -1066,6 +1088,38 @@ mod tests {
 
         let parsed = read_projects(&path).unwrap();
         assert_eq!(parsed.projects[0].workspace_name, "workspace-default");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_projects_dedupes_records_with_duplicate_ids() {
+        // Two records with the same id (corruption from manual edits,
+        // imports, etc.). read_projects must drop the second occurrence
+        // — Svelte's keyed {#each} block would otherwise crash with
+        // each_key_duplicate. First occurrence wins.
+        let dir = unique_tempdir("dedupe");
+        let path = dir.join("projects.json");
+
+        let raw = r#"{
+          "version": 1,
+          "projects": [
+            { "id": "p1", "name": "First",  "projectPath": "/p/a", "workspaceName": "ws" },
+            { "id": "p1", "name": "Dup",    "projectPath": "/p/b", "workspaceName": "ws" },
+            { "id": "p2", "name": "Second", "projectPath": "/p/c", "workspaceName": "ws" }
+          ]
+        }"#;
+        fs::write(&path, raw).unwrap();
+
+        let parsed = read_projects(&path).unwrap();
+        assert_eq!(parsed.projects.len(), 2, "duplicate id must be dropped");
+        // First occurrence wins: the "First" record stays, "Dup" is gone.
+        assert_eq!(parsed.projects[0].name, "First");
+        assert_eq!(parsed.projects[1].name, "Second");
+
+        // Cleaned data is written back so the next read is fully clean.
+        let reread = read_projects(&path).unwrap();
+        assert_eq!(reread.projects.len(), 2);
 
         let _ = fs::remove_dir_all(&dir);
     }

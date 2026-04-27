@@ -253,11 +253,19 @@
   $: stoppedProjects = totalProjects - runningProjects;
 
   /** Sprint 10 v0.10.4: group projects by workspace_name, preserving
-   * insertion order, and compute per-workspace aggregate status. */
+   * insertion order, and compute per-workspace aggregate status.
+   * Defensively dedupes by project.id — duplicates can sneak into
+   * projects.json after migrations or manual edits, and the keyed
+   * {#each} block downstream requires unique keys. */
   $: groupedWorkspaces = (() => {
+    const seenIds = new Set<string>();
     const order: string[] = [];
     const byName: Record<string, ProjectRecord[]> = {};
     for (const project of projects) {
+      if (seenIds.has(project.id)) {
+        continue;
+      }
+      seenIds.add(project.id);
       const name = project.workspaceName || "workspace-default";
       if (!byName[name]) {
         order.push(name);
