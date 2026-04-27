@@ -383,6 +383,15 @@
               disabled={$appStore.isBusy}
               knownWorkspaces={knownWorkspaces}
               onSelect={activateWorkspace}
+              onRename={(oldName, newName) => appStore.renameWorkspaceEntry(oldName, newName)}
+              onDelete={(name) => {
+                appStore.deleteWorkspaceEntry(name);
+                pinnedEmptyWorkspaces.delete(name);
+                pinnedEmptyWorkspaces = pinnedEmptyWorkspaces;
+                if (activeWorkspaceName === name) {
+                  activeWorkspaceName = workspacesWithProjects.find((n) => n !== name) ?? "";
+                }
+              }}
               projects={$appStore.projects ?? []}
               runtimeStatuses={$appStore.runtimeStatuses ?? {}}
             />
@@ -412,7 +421,20 @@
               onStop={(projectId) => appStore.stopProject(projectId)}
               onStopAll={() => appStore.stopAllProjects()}
               onDelete={(projectId) => appStore.deleteProjectEntry(projectId)}
-              onDeleteAll={() => appStore.deleteAllProjectEntries()}
+              onDeleteAll={async () => {
+                // Sprint 10 v0.10.4: "Delete all" means everything —
+                // every workspace's runtime, projects, JDT data dir,
+                // and any pinned-empty workspaces. Iterates known
+                // workspaces calling delete_workspace (which wipes
+                // each one fully); then resets client-side pin state
+                // and active workspace.
+                for (const name of [...knownWorkspaces]) {
+                  await appStore.deleteWorkspaceEntry(name);
+                }
+                pinnedEmptyWorkspaces.clear();
+                pinnedEmptyWorkspaces = pinnedEmptyWorkspaces;
+                activeWorkspaceName = "";
+              }}
               onDeploy={(mode, targetClients) => appStore.deployToAgents(mode, targetClients)}
               onSetWorkspace={(projectId, workspaceName) => appStore.setProjectWorkspaceEntry(projectId, workspaceName)}
               onRenameWorkspace={(oldName, newName) => appStore.renameWorkspaceEntry(oldName, newName)}

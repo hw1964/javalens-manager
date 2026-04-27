@@ -138,24 +138,36 @@ button {
 
 .workspace-row {
   width: 100%;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.45rem 0.6rem;
+  padding: 0.35rem 0.45rem;
   background: rgba(15, 23, 42, 0.55);
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 10px;
-  text-align: left;
 }
 
-.workspace-row:hover:not(:disabled) {
+.workspace-row:hover {
   background: rgba(148, 163, 184, 0.1);
 }
 
 .workspace-row.active {
   border-color: rgba(96, 165, 250, 0.55);
   background: rgba(37, 99, 235, 0.16);
+}
+
+.workspace-row-select {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.1rem 0.15rem;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  text-align: left;
 }
 
 .workspace-row-name {
@@ -202,6 +214,85 @@ button {
 
 .empty-hint {
   margin: 0;
+}
+
+/* Sprint 10 v0.10.4: shared context menu (right-click on workspaces or
+   project rows). Anchored to mouse coords by ContextMenu.svelte. */
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 11rem;
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.3rem;
+  background: rgba(15, 23, 42, 0.98);
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 10px;
+  box-shadow: 0 14px 36px rgba(2, 6, 23, 0.6);
+}
+
+.context-menu-item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  color: #f1f5f9;
+  font-size: 0.88rem;
+}
+
+.context-menu-item:hover:not(:disabled) {
+  background: rgba(96, 165, 250, 0.18);
+}
+
+.context-menu-item.danger {
+  color: #fca5a5;
+}
+
+.context-menu-item.danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fecaca;
+}
+
+/* Hover-revealed icon row on the left workspace list. The buttons are
+   visible only when the row (or one of them) is hovered. */
+.workspace-row {
+  position: relative;
+}
+
+.workspace-row-tools {
+  display: none;
+  gap: 0.25rem;
+  margin-left: 0.4rem;
+}
+
+.workspace-row:hover .workspace-row-tools,
+.workspace-row:focus-within .workspace-row-tools {
+  display: inline-flex;
+}
+
+.workspace-row-icon {
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: #cbd5f5;
+}
+
+.workspace-row-icon:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.18);
+}
+
+.workspace-row-icon.danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.45);
 }
 
 .panel {

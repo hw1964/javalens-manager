@@ -6,6 +6,12 @@
   export let activeWorkspaceName: string;
   export let disabled = false;
   export let onSelect: (workspaceName: string) => void;
+  /** Optional: rename a workspace on the left. When omitted the icon
+   * is hidden. */
+  export let onRename: ((oldName: string, newName: string) => void) | undefined = undefined;
+  /** Optional: delete a workspace on the left. When omitted the icon
+   * is hidden. */
+  export let onDelete: ((name: string) => void) | undefined = undefined;
   /** All workspaces the UI knows about, including pinned empty ones
    * (newly-created via "+ New workspace…" with no projects yet).
    * Sorted, deduped — owner is App.svelte. */
@@ -15,6 +21,17 @@
    * input only when isCreating === true. */
   let isCreating = false;
   let newName = "";
+
+  type Phase = "running" | "stopped" | "starting";
+  /** Reduce a (count, running) tally to the workspace's aggregate phase.
+   * Empty (count=0) → stopped; all running → running; none running →
+   * stopped; mixed → starting. */
+  function derivePhase(count: number, running: number): Phase {
+    if (count === 0) return "stopped";
+    if (running === count) return "running";
+    if (running === 0) return "stopped";
+    return "starting";
+  }
 
   /** Per-workspace summary derived from the union of `knownWorkspaces`
    * and `projects`: every known workspace renders a row, even if it has
@@ -43,14 +60,7 @@
         name,
         count: byName[name].count,
         running: byName[name].running,
-        phase:
-          byName[name].count === 0
-            ? "stopped"
-            : byName[name].running === byName[name].count
-              ? "running"
-              : byName[name].running === 0
-                ? "stopped"
-                : "starting",
+        phase: derivePhase(byName[name].count, byName[name].running),
       }));
   })();
 
@@ -84,6 +94,25 @@
       cancelCreate();
     }
   }
+
+  function promptRename(name: string) {
+    if (!onRename) return;
+    const next = window.prompt(`Rename workspace "${name}" to:`, name);
+    if (next && next.trim().length > 0 && next.trim() !== name) {
+      onRename(name, next.trim());
+    }
+  }
+
+  function confirmDelete(name: string, count: number) {
+    if (!onDelete) return;
+    const detail =
+      count === 0
+        ? `Delete workspace "${name}"?`
+        : `Delete workspace "${name}" and all ${count} project(s) inside it?`;
+    if (window.confirm(detail)) {
+      onDelete(name);
+    }
+  }
 </script>
 
 <section class="panel stack workspace-list-panel">
@@ -99,22 +128,52 @@
   <ul class="workspace-list">
     {#each workspaceSummary as ws (ws.name)}
       <li>
-        <button
+        <div
           class:active={ws.name === activeWorkspaceName}
           class="workspace-row"
-          disabled={disabled}
-          on:click={() => onSelect(ws.name)}
-          type="button"
         >
-          <span class={`status-lamp ${ws.phase}`}></span>
-          <span class="workspace-row-name">{ws.name}</span>
-          <span class="workspace-row-meta muted">
-            {ws.count} project{ws.count === 1 ? "" : "s"}
-            {#if ws.running > 0 && ws.phase !== "running"}
-              · {ws.running} running
+          <button
+            class="workspace-row-select"
+            disabled={disabled}
+            on:click={() => onSelect(ws.name)}
+            type="button"
+          >
+            <span class={`status-lamp ${ws.phase}`}></span>
+            <span class="workspace-row-name">{ws.name}</span>
+            <span class="workspace-row-meta muted">
+              {ws.count} project{ws.count === 1 ? "" : "s"}
+              {#if ws.running > 0 && ws.phase !== "running"}
+                · {ws.running} running
+              {/if}
+            </span>
+          </button>
+          <span class="workspace-row-tools">
+            {#if onRename}
+              <button
+                aria-label={`Rename ${ws.name}`}
+                class="workspace-row-icon"
+                disabled={disabled}
+                on:click|stopPropagation={() => promptRename(ws.name)}
+                title="Rename workspace"
+                type="button"
+              >
+                ✎
+              </button>
+            {/if}
+            {#if onDelete}
+              <button
+                aria-label={`Delete ${ws.name}`}
+                class="workspace-row-icon danger"
+                disabled={disabled}
+                on:click|stopPropagation={() => confirmDelete(ws.name, ws.count)}
+                title="Delete workspace"
+                type="button"
+              >
+                ✕
+              </button>
             {/if}
           </span>
-        </button>
+        </div>
       </li>
     {/each}
 

@@ -7,6 +7,14 @@
     ProjectRecord,
     RuntimeStatusRecord
   } from "../api/tauri";
+  import ContextMenu from "./ContextMenu.svelte";
+
+  interface ContextMenuItem {
+    label: string;
+    onSelect: () => void;
+    danger?: boolean;
+    disabled?: boolean;
+  }
 
   export let projects: ProjectRecord[] = [];
   export let runtimeStatuses: Record<string, RuntimeStatusRecord> = {};
@@ -68,6 +76,54 @@
    * the user is typing a new workspace name in moveNewName. */
   let moveSelection = "";
   let moveNewName = "";
+
+  /** Currently-open right-click context menu. Closed = null. */
+  let contextMenu: { x: number; y: number; items: ContextMenuItem[] } | null = null;
+
+  function openProjectContextMenu(event: MouseEvent, project: ProjectRecord) {
+    event.preventDefault();
+    if (disabled) return;
+    contextMenu = {
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        { label: "Start", onSelect: () => onStart(project.id) },
+        { label: "Stop", onSelect: () => onStop(project.id) },
+        { label: "Move to workspace…", onSelect: () => openMoveDropdown(project) },
+        {
+          label: "Delete project",
+          danger: true,
+          onSelect: () => onDelete(project.id),
+        },
+      ],
+    };
+  }
+
+  function openWorkspaceContextMenu(
+    event: MouseEvent,
+    workspace: { name: string; projects: ProjectRecord[] },
+  ) {
+    event.preventDefault();
+    if (disabled) return;
+    contextMenu = {
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        { label: "Start workspace", onSelect: () => startWorkspace(workspace.projects) },
+        { label: "Stop workspace", onSelect: () => stopWorkspace(workspace.projects) },
+        { label: "Rename workspace", onSelect: () => startRenameWorkspace(workspace.name) },
+        {
+          label: "Delete workspace",
+          danger: true,
+          onSelect: () => handleDeleteWorkspace(workspace.name, workspace.projects.length),
+        },
+      ],
+    };
+  }
+
+  function closeContextMenu() {
+    contextMenu = null;
+  }
 
   function registerRow(node: HTMLElement, projectId: string) {
     rowRefs[projectId] = node;
@@ -260,6 +316,17 @@
     }
   }
 
+  /** Reduce a list of per-project phases to a single workspace phase.
+   * Empty workspaces are stopped by definition; uniform-running members
+   * → running; uniform-stopped → stopped; anything mixed → starting. */
+  type Phase = "running" | "stopped" | "starting" | "failed";
+  function deriveWorkspacePhase(phases: Phase[]): Phase {
+    if (phases.length === 0) return "stopped";
+    if (phases.every((p) => p === "running")) return "running";
+    if (phases.every((p) => p === "stopped")) return "stopped";
+    return "starting";
+  }
+
   $: phases = projects.map((project) => runtimeStatuses[project.id]?.phase ?? "stopped");
   $: aggregatePhase =
     phases.length === 0
@@ -304,22 +371,17 @@
     return order.map((name) => {
       const ws_projects = byName[name];
       const ws_phases = ws_projects.map(
-        (p) => runtimeStatuses[p.id]?.phase ?? "stopped"
+        (p) => (runtimeStatuses[p.id]?.phase ?? "stopped") as Phase
       );
-      // Empty workspaces are "stopped" by definition; otherwise derive
-      // from member project phases.
-      const ws_phase =
-        ws_phases.length === 0
-          ? "stopped"
-          : ws_phases.every((ph) => ph === "running")
-            ? "running"
-            : ws_phases.every((ph) => ph === "stopped")
-              ? "stopped"
-              : "starting";
       const ws_running = ws_projects.filter(
         (p) => runtimeStatuses[p.id]?.phase === "running"
       ).length;
-      return { name, projects: ws_projects, phase: ws_phase, runningCount: ws_running };
+      return {
+        name,
+        projects: ws_projects,
+        phase: deriveWorkspacePhase(ws_phases),
+        runningCount: ws_running,
+      };
     });
   })();
 
@@ -468,7 +530,7 @@
       {#each groupedWorkspaces as workspace (workspace.name)}
         {@const collapsed = collapsedWorkspaces[workspace.name] ?? (workspace.phase === "stopped")}
         {@const isRenaming = renamingWorkspace === workspace.name}
-        <article class="workspace-card">
+        <article class="workspace-card" on:contextmenu={(e) => openWorkspaceContextMenu(e, workspace)}>
           <header class="workspace-header">
             <div class="workspace-title">
               <button
@@ -549,6 +611,7 @@
                 <article
                   class:selected={project.id === selectedProjectId}
                   class="project-card nested"
+                  on:contextmenu={(e) => openProjectContextMenu(e, project)}
                   use:registerRow={project.id}
                 >
                   <div class="project-row">
@@ -631,3 +694,12 @@
     </div>
   {/if}
 </section>
+
+{#if contextMenu}
+  <ContextMenu
+    items={contextMenu.items}
+    onClose={closeContextMenu}
+    x={contextMenu.x}
+    y={contextMenu.y}
+  />
+{/if}
