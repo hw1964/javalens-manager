@@ -1197,11 +1197,14 @@ button:disabled {
 }
 
 .project-select-checkbox {
-  cursor: pointer;
+  width: 1rem;
+  height: 1rem;
   margin: 0;
-  margin-top: 0.4rem;
+  margin-top: 0.45rem;
+  cursor: pointer;
   align-self: start;
   justify-self: start;
+  accent-color: #60a5fa;
 }
 
 .project-card.selected-row {
@@ -1242,6 +1245,12 @@ button:disabled {
      workspace cards. */
   max-height: 480px;
   overflow-y: auto;
+}
+
+/* Sprint-10 polish: collapsed workspace keeps its rows mounted so
+   re-expanding is instant. Hide via CSS instead of {#if} unmounting. */
+.workspace-projects.is-collapsed {
+  display: none;
 }
 
 /* Empty workspace hint inside an expanded card with no projects. */

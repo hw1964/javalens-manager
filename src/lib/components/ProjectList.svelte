@@ -912,11 +912,13 @@
           {#if isRenaming && renameError}
             <p class="project-error">{renameError}</p>
           {/if}
-          {#if !collapsed}
-            <div class="workspace-projects stack">
-              {#if workspace.projects.length === 0}
-                <p class="muted empty-workspace-hint">No projects in this workspace yet. Add one on the left, or move existing projects here from another workspace's "Move…" menu.</p>
-              {/if}
+          <!-- Sprint-10 polish: always render the row block; toggle
+               visibility via CSS so re-expanding a 30-project workspace
+               doesn't pay the per-row mount cost every time. -->
+          <div class="workspace-projects stack" class:is-collapsed={collapsed} aria-hidden={collapsed}>
+            {#if workspace.projects.length === 0}
+              <p class="muted empty-workspace-hint">No projects in this workspace yet. Add one on the left, or move existing projects here from another workspace's "Move…" menu.</p>
+            {/if}
               {#each workspace.projects as project (project.id)}
                 {@const status = runtimeStatuses[project.id]}
                 <article
@@ -1056,7 +1058,6 @@
                 </article>
               {/each}
             </div>
-          {/if}
         </article>
       {/each}
     </div>
