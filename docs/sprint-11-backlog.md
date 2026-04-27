@@ -9,7 +9,7 @@ Four threads, one release:
 1. **Detection-matrix completion** — any project type loaded into a workspace gets fully indexed (sources + dependencies) regardless of build system. Workspace bundle pool resolves `Require-Bundle` between sibling PDE bundles loaded together. Gradle resolution moves from heuristic to proper.
 2. **Tool-surface consolidation** — collapse ~13 narrow `find_X` tools into 2 parametric tools so the per-service tool count drops from 66 to ~55, freeing budget for the next thread.
 3. **Structural refactoring (Ring 1, pulled forward from Sprint 12)** — five JDT LTK-backed refactoring tools: `move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`. Move-class and repackaging are the most error-prone operations in agent-driven Java work; without first-class refactoring the agent has to do find-and-replace across imports and qualified names by hand. With LTK behind these tools, javalens-mcp + javalens-manager become a professional-grade autonomous-Java-development toolset that goes beyond what upstream `pzalutski-pixel/javalens-mcp` aims for.
-4. **Cutover** — cut fork release `v1.4.0`, flip manager `single_workspace_mode` default to true, ship manager `v0.11.0`.
+4. **Cutover** — cut fork release `v1.4.0`, ship manager `v0.11.0` (version bumps + README/Help.md updates for the new tool surface).
 
 End-of-sprint outcome:
 
@@ -36,7 +36,7 @@ Three of the four cases have correctness gaps. Sprint 11 closes them.
 ## Repos touched
 
 - **`javalens-mcp` (fork)**: Tycho packaging detection, `MANIFEST.MF` parsing helpers, workspace bundle pool, Gradle Tooling API integration, **tool-surface consolidation (Phase E, new)**. Cut release `v1.4.0`.
-- **`javalens-manager`**: flip `single_workspace_mode` default to true (where Sprint 10 made it opt-in); release a manager version targeting fork `v1.4.0`.
+- **`javalens-manager`**: cut a manager version (`v0.11.0`) targeting fork `v1.4.0` — version bumps and Help.md / README updates for the new tool surface and refactoring tools. No Rust or Svelte code changes required from Phases A–E.
 
 ## Phase A — Tycho-aware Maven detection
 
@@ -374,16 +374,14 @@ Once any of these are spec'd, slot in front of Phase F if intended for `v0.11.0`
 
 Bump pom + MANIFEST.MF qualifiers as needed; `git tag -a v1.4.0 -F docs/release-notes/v1.4.0.md`; push tag → CI publishes the GitHub release. Release notes cover Phases A/B/C (detection matrix), Phase D (tool consolidation), and Phase E (refactoring tools) under one curated note.
 
-### F.2 Flip manager defaults
+### F.2 Manager release
 
-In `javalens-manager/src-tauri/src/config.rs`:
+Bump versions in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` to `0.11.0`. Tag and push. Update README and `src/assets/help.md` to reflect:
 
-- Sprint 10 introduced `single_workspace_mode` behind a flag. Sprint 11 flips its default to `true` for fresh installs (one workspace per port group, all related projects share one MCP service).
-- Existing user settings preserved.
+- The consolidated `find_*` tool surface (Phase D).
+- The new structural refactoring tools — `move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field` (Phase E).
 
-### F.3 Manager release
-
-Tag the manager (e.g., `v0.11.0`) targeting fork `v1.4.0`. Update README and Help docs to reflect the now-default port-as-workspace + bundle-pool behavior, the consolidated tool surface, and the new structural refactoring tools (`move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`).
+No Rust or Svelte code changes are needed for the cutover itself. Sprint 10 already removed the legacy `single_workspace_mode` flag and the per-port concept; workspace mode is the only mode and has been since `v0.10.4`.
 
 ## Tests rollup
 
@@ -401,7 +399,7 @@ Tag the manager (e.g., `v0.11.0`) targeting fork `v1.4.0`. Update README and Hel
 - [ ] Tool count per service drops to ~55 (from 66 in v1.3.0); after Phase E adds 5 refactoring tools, lands at ~60.
 - [ ] All five Phase E refactoring tools (`move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`) pass happy/validation/conflict tests; cross-bundle `pull_up` integration test green.
 - [ ] Fork `v1.4.0` published with detection-matrix completion + workspace bundle pool + Gradle Tooling API + tool-surface consolidation + structural refactoring.
-- [ ] Manager `single_workspace_mode` default = true; release tagged.
+- [ ] Manager `v0.11.0` tagged with version bumps + Help.md / README updates for the new tool surface (Phase D) and refactoring tools (Phase E).
 - [ ] No regression on Sprint 9 / Sprint 10 fixtures.
 
 ## Out of scope (deferred)
