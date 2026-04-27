@@ -931,35 +931,37 @@
                   use:registerRow={project.id}
                 >
                   <div class="project-row">
-                    <input
-                      type="checkbox"
-                      class="project-select-checkbox"
-                      checked={selectedProjectIds.has(project.id)}
-                      disabled={disabled}
-                      on:click|stopPropagation={(e) => toggleProjectSelection(project.id, e)}
-                      title="Select for bulk action (shift-click to extend range)"
-                    />
                     <div class="project-left">
-                      {#if renamingProjectId === project.id}
+                      <div class="project-name-line">
                         <input
-                          aria-label="Rename project"
-                          bind:value={projectRenameDraft}
-                          class="project-rename-input"
-                          on:blur={() => commitRenameProject(project)}
-                          on:keydown={(e) => handleProjectRenameKeydown(e, project)}
-                          title="Press Enter to save, Esc to cancel"
-                          autofocus
+                          type="checkbox"
+                          class="project-select-checkbox"
+                          checked={selectedProjectIds.has(project.id)}
+                          disabled={disabled}
+                          on:click|stopPropagation={(e) => toggleProjectSelection(project.id, e)}
+                          title="Select for bulk action (shift-click to extend range)"
                         />
-                      {:else}
-                        <button
-                          class="select"
-                          on:click={() => onSelect(project.id)}
-                          title="Select this project (right-click for actions)"
-                          type="button"
-                        >
-                          <h3>{project.name}</h3>
-                        </button>
-                      {/if}
+                        {#if renamingProjectId === project.id}
+                          <input
+                            aria-label="Rename project"
+                            bind:value={projectRenameDraft}
+                            class="project-rename-input"
+                            on:blur={() => commitRenameProject(project)}
+                            on:keydown={(e) => handleProjectRenameKeydown(e, project)}
+                            title="Press Enter to save, Esc to cancel"
+                            autofocus
+                          />
+                        {:else}
+                          <button
+                            class="select"
+                            on:click={() => onSelect(project.id)}
+                            title="Select this project (right-click for actions)"
+                            type="button"
+                          >
+                            <h3>{project.name}</h3>
+                          </button>
+                        {/if}
+                      </div>
                       <p class="path" title={project.projectPath}>{project.projectPath}</p>
                     </div>
 

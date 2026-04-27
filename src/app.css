@@ -1197,10 +1197,21 @@ button:disabled {
 }
 
 .project-select-checkbox {
-  margin-right: 0.25rem;
-  margin-top: 0.35rem;
   cursor: pointer;
   flex-shrink: 0;
+  margin: 0;
+}
+
+.project-name-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.project-name-line > .select,
+.project-name-line > .project-rename-input {
+  min-width: 0;
 }
 
 .project-card.selected-row {
@@ -1282,19 +1293,18 @@ button:disabled {
 
 .project-row {
   display: flex;
+  justify-content: space-between;
   align-items: start;
   gap: 0.65rem;
 }
 
 .project-left {
-  flex: 1 1 auto;
   min-width: 0;
   display: grid;
   gap: 0.2rem;
 }
 
 .project-right {
-  flex: 0 0 auto;
   display: grid;
   gap: 0.35rem;
   justify-items: end;
