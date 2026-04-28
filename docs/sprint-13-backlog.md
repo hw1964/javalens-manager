@@ -73,27 +73,57 @@ Total ~2 weeks of focused work.
 
 **Why deferred:** v0.12.0 shipped to GitHub on 2026-04-29 without `public/help/tray-menu.png` because the screenshot is a USER STEP (requires `npx tauri dev` running with two workspaces in different states) and we wanted the code on GitHub safe rather than blocked on it.
 
-### A.1 Capture `public/help/tray-menu.png` — USER STEP
+### A.1 Capture tray screenshots — USER STEP
 
-1. Start manager dev build: `cd /home/harald/CursorProjects/javalens-manager && npx tauri dev`.
-2. In manager, ensure at least 2 workspaces are configured. Start one (it should reach Running → green icon). Leave the other Stopped (gray icon). This makes the icon variations visible in the screenshot.
-3. With manager dev running, open the tray menu (left-click on Linux / right-click on macOS depending on session type). Capture the menu using:
-   ```bash
-   gnome-screenshot --delay=5 -f ~/Desktop/tray-menu.png
-   ```
-   Then crop the image to the menu region only (GIMP / Preview / `convert -crop`).
-4. Move the cropped image into `public/help/tray-menu.png`.
-5. Re-capture `public/help/dashboard.png`, `public/help/settings-top.png`, `public/help/settings-bottom.png` **only if** they visibly changed during Sprint 12. (Inspection suggests no — Sprint 12 dashboard surface is unchanged.)
+Two screenshots, both captured against `npx tauri dev` with at least 2 workspaces configured (one Running → green icon, one Stopped → gray icon — so the status-icon variations are visible).
 
-### A.2 Wire up help.md embed
+1. **`public/help/tray-menu.png`** — tray menu *open*, showing the full menu shape (Show / per-workspace toggles with status icons / Start all / Stop all / Quit). This is the primary screenshot.
+2. **`public/help/tray-icon.png`** — tray *icon only* in the system tray bar, showing the JavaLens icon as it appears at rest (small, ~24×24 in the GNOME panel). Helps users locate the tray entry on first install.
 
-[`src/assets/help.md`](../src/assets/help.md) — extend the "System tray" section (the one already added in v0.12.0) to embed:
+Capture flow:
 
-```markdown
-![Tray menu with status icons](/help/tray-menu.png)
+```bash
+cd /home/harald/CursorProjects/javalens-manager
+npx tauri dev
+# in another terminal:
+gnome-screenshot --delay=5 -f ~/Desktop/tray-menu.png   # open menu before delay fires
+gnome-screenshot --delay=5 -f ~/Desktop/tray-icon.png   # let menu close before this one
 ```
 
-at the top of that section. Verify rendering with `npx tauri dev`'s help page reload.
+Crop both with GIMP / `convert -crop` / Preview. Move into `public/help/`.
+
+Re-capture `public/help/dashboard.png` / `settings-top.png` / `settings-bottom.png` **only if** they visibly changed during Sprint 12 / 13. Sprint 12 didn't touch dashboard or settings UI; Sprint 13 won't either (it's all fork-side tool work). Likely skip.
+
+### A.2 Author the help-file content for the new tools
+
+[`src/assets/help.md`](../src/assets/help.md) needs two distinct edits:
+
+**A.2.a — Tray section embed (carry-over from Sprint 12):**
+
+Extend the existing "System tray" section to embed both new screenshots:
+
+```markdown
+![Tray icon at rest](/help/tray-icon.png)
+
+The JavaLens icon sits in the system tray once the manager starts. Click
+to open the menu:
+
+![Tray menu with per-workspace status icons](/help/tray-menu.png)
+```
+
+**A.2.b — "Tool surface" section update for fork v1.7.0 (NEW for Sprint 13):**
+
+The existing `### Tool surface (fork v1.5.x)` heading (line 107 in current help.md) needs:
+
+- Heading bump to `### Tool surface (fork v1.7.x)`.
+- A new tool count statement: 73 tools per workspace (up from the v1.5.x baseline the heading currently refers to).
+- Three new subsections describing what's now available — keeping it user-facing (what an agent can do for them), not API-spec dense:
+  - **Code generation** (Ring 2, 6 tools) — "Have the agent generate constructors, getters/setters, equals/hashCode, toString, override stubs, or a JUnit skeleton for an existing class. The agent can ask JavaLens to do all of these instead of typing them out, which avoids small mistakes around modifiers / generics / annotations."
+  - **Build & dependency management** (Ring 3, 3 tools) — "Add or bump a Maven / Gradle dependency, and ask which declared dependencies aren't actually used. The manager-fork edits `pom.xml` / `build.gradle` directly and triggers M2E / Buildship reimport so the classpath is in sync immediately."
+  - **Workflow polish** (Ring 4, 2 tools) — "Apply the project's JDT formatter to a file, package, project, or the whole workspace. Optimize imports across every file in one call instead of per-file."
+- Cross-link back to the fork's `README.md` "Verification" subsection (Sprint 12 wording) and the new "Code generation" / "Build & dependency management" / "Workflow polish" subsections that v1.7.0 adds to the fork README.
+
+Verify rendering with `npx tauri dev`'s help page reload — both new images render, the new sections sit correctly above the existing "Selected Project Status" subsection.
 
 ### A.3 Manager v0.13.0 cutover
 
@@ -449,8 +479,9 @@ Already covered in Phase A.3. After fork v1.7.0 publishes, the manager's release
 
 | Repo / Path | Phase | Change |
 |---|---|---|
-| `javalens-manager/public/help/tray-menu.png` | A.1 | NEW — captured by user |
-| `javalens-manager/src/assets/help.md` | A.2 | Embed of new tray-menu.png |
+| `javalens-manager/public/help/tray-menu.png` | A.1 | NEW — tray menu open, captured by user |
+| `javalens-manager/public/help/tray-icon.png` | A.1 | NEW — tray icon at rest, captured by user |
+| `javalens-manager/src/assets/help.md` | A.2 | Tray screenshots + new "Tool surface (fork v1.7.x)" subsections for Rings 2/3/4 |
 | `javalens-manager/{package.json, src-tauri/Cargo.toml, src-tauri/tauri.conf.json}` | A.3 | 0.13.0 |
 | `javalens-manager/docs/release-notes/v0.13.0.md` | A.3 | NEW |
 | `javalens-mcp/.../tools/codegen/GenerateConstructorTool.java` | B.1 | NEW |
@@ -532,7 +563,7 @@ npx tauri dev   # for tray-menu.png screenshot capture
 
 ## Definition of Done
 
-- [ ] Phase A: `public/help/tray-menu.png` captured + committed; help.md embeds it; manager v0.13.0 tagged + published as Latest.
+- [ ] Phase A: `public/help/tray-menu.png` + `public/help/tray-icon.png` captured + committed; help.md embeds both; help.md "Tool surface" section updated to v1.7.x with Ring 2/3/4 subsections; manager v0.13.0 tagged + published as Latest.
 - [ ] Phase B: 6 codegen tools shipped, registered, focused tests green (12/12).
 - [ ] Phase C: 3 dep-management tools shipped, registered, focused tests green (6/6).
 - [ ] Phase D: 2 workflow tools shipped, registered, focused tests green (4/4).
