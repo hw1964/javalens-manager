@@ -59,21 +59,23 @@ Rationale: Tycho's full reactor builds are I/O-heavy (target-platform resolution
 
 ## Order of work
 
-Phases B / C / D are independent across tools but share the fork repo, so they run sequentially with focused tests, then a single full verify at the end (Phase E).
+UI / docs strictly come last. The help-file rewrite and manager v0.13.0 release describe what fork v1.7.0 actually delivers, so they only get written *after* Phases B/C/D are green and we know the real shape of the 11 new tools. Tray screenshots are the one exception — they only need a working v0.12.0 manager dev build and can be captured at any time during the sprint, even on day 1.
 
-1. **Phase A — Sprint 12 carry-over (manager)** (~half day, USER STEP for screenshot)
+1. **Phase A — Tray screenshots (USER STEP)** (~30 min) — captures `public/help/tray-menu.png` + `public/help/tray-icon.png`. Carry-over from Sprint 12. Captured anytime; held aside for the Phase E commit.
 2. **Phase B — Ring 2 code generation (fork)** (~5 days, 6 tools)
 3. **Phase C — Ring 3 build / dependency management (fork)** (~3 days, 3 tools)
 4. **Phase D — Ring 4 formatter / workflow polish (fork)** (~2 days, 2 tools)
-5. **Phase E — Cutover release** (~half day, includes the only full `mvn clean verify`)
+5. **Phase E — Cutover (fork v1.7.0 + UI docs + manager v0.13.0)** (~1 day) — single full `mvn clean verify`, fork tag + push, **then** help.md rewrite using the now-real tool inventory, **then** manager release.
 
 Total ~2 weeks of focused work.
 
-## Phase A — Sprint 12 carry-over (manager)
+UI rule, restated: never write user-facing docs ahead of the code that backs them. Phase B/C/D ship 11 tools; whatever they actually deliver is what Phase E describes. Drafting docs before that risks promising things the tools don't quite do.
 
-**Why deferred:** v0.12.0 shipped to GitHub on 2026-04-29 without `public/help/tray-menu.png` because the screenshot is a USER STEP (requires `npx tauri dev` running with two workspaces in different states) and we wanted the code on GitHub safe rather than blocked on it.
+## Phase A — Tray screenshots (USER STEP)
 
-### A.1 Capture tray screenshots — USER STEP
+**Why standalone, not bundled with the manager release:** v0.12.0 shipped to GitHub on 2026-04-29 without `public/help/tray-menu.png` (the screenshot is a USER STEP — requires `npx tauri dev` running with two workspaces in different states, can't be automated headlessly). Sprint 13 captures it once and stages the PNGs in `public/help/`. They get bundled into the manager v0.13.0 commit at Phase E.4.
+
+### A.1 Capture tray screenshots
 
 Two screenshots, both captured against `npx tauri dev` with at least 2 workspaces configured (one Running → green icon, one Stopped → gray icon — so the status-icon variations are visible).
 
@@ -94,45 +96,7 @@ Crop both with GIMP / `convert -crop` / Preview. Move into `public/help/`.
 
 Re-capture `public/help/dashboard.png` / `settings-top.png` / `settings-bottom.png` **only if** they visibly changed during Sprint 12 / 13. Sprint 12 didn't touch dashboard or settings UI; Sprint 13 won't either (it's all fork-side tool work). Likely skip.
 
-### A.2 Author the help-file content for the new tools
-
-[`src/assets/help.md`](../src/assets/help.md) needs two distinct edits:
-
-**A.2.a — Tray section embed (carry-over from Sprint 12):**
-
-Extend the existing "System tray" section to embed both new screenshots:
-
-```markdown
-![Tray icon at rest](/help/tray-icon.png)
-
-The JavaLens icon sits in the system tray once the manager starts. Click
-to open the menu:
-
-![Tray menu with per-workspace status icons](/help/tray-menu.png)
-```
-
-**A.2.b — "Tool surface" section update for fork v1.7.0 (NEW for Sprint 13):**
-
-The existing `### Tool surface (fork v1.5.x)` heading (line 107 in current help.md) needs:
-
-- Heading bump to `### Tool surface (fork v1.7.x)`.
-- A new tool count statement: 73 tools per workspace (up from the v1.5.x baseline the heading currently refers to).
-- Three new subsections describing what's now available — keeping it user-facing (what an agent can do for them), not API-spec dense:
-  - **Code generation** (Ring 2, 6 tools) — "Have the agent generate constructors, getters/setters, equals/hashCode, toString, override stubs, or a JUnit skeleton for an existing class. The agent can ask JavaLens to do all of these instead of typing them out, which avoids small mistakes around modifiers / generics / annotations."
-  - **Build & dependency management** (Ring 3, 3 tools) — "Add or bump a Maven / Gradle dependency, and ask which declared dependencies aren't actually used. The manager-fork edits `pom.xml` / `build.gradle` directly and triggers M2E / Buildship reimport so the classpath is in sync immediately."
-  - **Workflow polish** (Ring 4, 2 tools) — "Apply the project's JDT formatter to a file, package, project, or the whole workspace. Optimize imports across every file in one call instead of per-file."
-- Cross-link back to the fork's `README.md` "Verification" subsection (Sprint 12 wording) and the new "Code generation" / "Build & dependency management" / "Workflow polish" subsections that v1.7.0 adds to the fork README.
-
-Verify rendering with `npx tauri dev`'s help page reload — both new images render, the new sections sit correctly above the existing "Selected Project Status" subsection.
-
-### A.3 Manager v0.13.0 cutover
-
-- Bump `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json` from `0.12.0` → `0.13.0`.
-- `cargo check --manifest-path src-tauri/Cargo.toml` to refresh `Cargo.lock`.
-- New [`docs/release-notes/v0.13.0.md`](release-notes/v0.13.0.md) — covers Phase A only on the manager side, plus a paragraph noting fork v1.7.0 ships the Ring 2/3/4 tool batch (auto-picked-up by the release poller).
-- Single commit with screenshot + help.md + version bumps + release notes.
-- `git tag -a v0.13.0 -F docs/release-notes/v0.13.0.md && git push origin main v0.13.0`.
-- Publish draft via `gh api -X PATCH /repos/hw1964/javalens-manager/releases/{id}` with `body` from notes file, `draft: false`, `make_latest: "true"`.
+**Do not edit `help.md` yet.** The tray-section embed and the "Tool surface" rewrite both happen at Phase E.3, so they go in one cohesive commit — and the tool-surface rewrite needs the real Ring 2/3/4 inventory from Phase B/C/D, which doesn't exist until then.
 
 ## Phase B — Ring 2 code generation (fork)
 
@@ -471,17 +435,55 @@ If the full run reveals interactions between rings (e.g., `format_file` affectin
 - `git tag -a v1.7.0 -F docs/release-notes/v1.7.0.md && git push origin master v1.7.0`.
 - CI release workflow auto-publishes the GitHub Release.
 
-### E.3 Tag manager v0.13.0
+### E.3 Manager help.md rewrite (UI docs — fork v1.7.0 must be tagged first)
 
-Already covered in Phase A.3. After fork v1.7.0 publishes, the manager's release-poller picks up the new tools automatically — no manager-side code change for that.
+Now that fork v1.7.0 is tagged and the 11 tools are real, write the user-facing docs against what was actually shipped — not against what we drafted at sprint start.
+
+[`src/assets/help.md`](../src/assets/help.md), two coordinated edits in one pass:
+
+**E.3.a — Tray section embed:**
+
+Extend the existing "System tray" section to embed the screenshots staged by Phase A:
+
+```markdown
+![Tray icon at rest](/help/tray-icon.png)
+
+The JavaLens icon sits in the system tray once the manager starts. Click
+to open the menu:
+
+![Tray menu with per-workspace status icons](/help/tray-menu.png)
+```
+
+**E.3.b — "Tool surface" rewrite for fork v1.7.x:**
+
+The existing `### Tool surface (fork v1.5.x)` heading needs:
+
+- Heading bump to `### Tool surface (fork v1.7.x)`.
+- Tool count statement: 73 tools per workspace (up from v1.5.x baseline).
+- Three new subsections, written from the **shipped** Phase B/C/D tools — describe what an agent can actually do for the user, not API spec. Tone matches the existing Sprint 11 LTK refactoring paragraph above. If any tool got `@Disabled` happy-path tests due to the cut line, soften that subsection's language to "the agent can ask JavaLens to ..." rather than "JavaLens does ..." so we don't promise a smoothness the v1.7.0 release doesn't yet deliver.
+  - **Code generation** (Ring 2, ~6 tools) — calibrate wording against what shipped.
+  - **Build & dependency management** (Ring 3, ~3 tools) — calibrate against shipped.
+  - **Workflow polish** (Ring 4, ~2 tools) — calibrate against shipped.
+- Cross-link the fork's `README.md` "Code generation" / "Build & dependency management" / "Workflow polish" subsections that v1.7.0 added.
+
+Verify rendering with `npx tauri dev`'s help-page reload — both new images render, the new subsections sit correctly above the existing "Selected Project Status" subsection, no broken links.
+
+### E.4 Manager v0.13.0 cutover
+
+- Bump `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json` from `0.12.0` → `0.13.0`.
+- `cargo check --manifest-path src-tauri/Cargo.toml` to refresh `Cargo.lock`.
+- New [`docs/release-notes/v0.13.0.md`](release-notes/v0.13.0.md) — covers (a) the Sprint 12 carry-over (tray screenshots + tray section embed) and (b) the help-file refresh for fork v1.7.0 tools (Rings 2/3/4 picked up automatically by the existing release-poller; no manager-side code change for that).
+- **One commit** bundling: Phase A screenshots (`public/help/tray-{menu,icon}.png`), Phase E.3 help.md edits, version bumps, release notes.
+- `git tag -a v0.13.0 -F docs/release-notes/v0.13.0.md && git push origin main v0.13.0`.
+- Publish draft via `gh api -X PATCH /repos/hw1964/javalens-manager/releases/{id}` with `body` from notes file, `draft: false`, `make_latest: "true"`.
 
 ## Critical files
 
 | Repo / Path | Phase | Change |
 |---|---|---|
-| `javalens-manager/public/help/tray-menu.png` | A.1 | NEW — tray menu open, captured by user |
-| `javalens-manager/public/help/tray-icon.png` | A.1 | NEW — tray icon at rest, captured by user |
-| `javalens-manager/src/assets/help.md` | A.2 | Tray screenshots + new "Tool surface (fork v1.7.x)" subsections for Rings 2/3/4 |
+| `javalens-manager/public/help/tray-menu.png` | A.1 | NEW — tray menu open, captured by user (committed at E.4) |
+| `javalens-manager/public/help/tray-icon.png` | A.1 | NEW — tray icon at rest, captured by user (committed at E.4) |
+| `javalens-manager/src/assets/help.md` | E.3 | Tray screenshot embeds + "Tool surface (fork v1.7.x)" rewrite — written *after* fork v1.7.0 ships |
 | `javalens-manager/{package.json, src-tauri/Cargo.toml, src-tauri/tauri.conf.json}` | A.3 | 0.13.0 |
 | `javalens-manager/docs/release-notes/v0.13.0.md` | A.3 | NEW |
 | `javalens-mcp/.../tools/codegen/GenerateConstructorTool.java` | B.1 | NEW |
@@ -563,11 +565,14 @@ npx tauri dev   # for tray-menu.png screenshot capture
 
 ## Definition of Done
 
-- [ ] Phase A: `public/help/tray-menu.png` + `public/help/tray-icon.png` captured + committed; help.md embeds both; help.md "Tool surface" section updated to v1.7.x with Ring 2/3/4 subsections; manager v0.13.0 tagged + published as Latest.
+- [ ] Phase A: `public/help/tray-menu.png` + `public/help/tray-icon.png` captured (held aside for E.4 commit; not committed yet on its own).
 - [ ] Phase B: 6 codegen tools shipped, registered, focused tests green (12/12).
 - [ ] Phase C: 3 dep-management tools shipped, registered, focused tests green (6/6).
 - [ ] Phase D: 2 workflow tools shipped, registered, focused tests green (4/4).
-- [ ] Phase E: full reactor `mvn clean verify` green (122 core + 446 mcp + 4 `@Disabled` carrying through). Fork v1.7.0 tagged + published.
+- [ ] Phase E.1: full reactor `mvn clean verify` green (122 core + 446 mcp + 4 `@Disabled` carrying through).
+- [ ] Phase E.2: Fork v1.7.0 tagged + published.
+- [ ] Phase E.3: Help.md tray-section embed + "Tool surface (fork v1.7.x)" rewrite written **against the actually-shipped tool inventory**, not the sprint-start draft.
+- [ ] Phase E.4: Manager v0.13.0 tagged + published as Latest, single commit bundling A.1 screenshots + E.3 help.md + version bumps + release notes.
 - [ ] Per-workspace tool count is **73** (`health_check` confirms).
 - [ ] Zero AI-attribution boilerplate in any commit, release note, or doc produced during the sprint.
 - [ ] No regression on Sprint 11 / 12 fixtures (existing 424 mcp.tests + 122 core.tests + 42 manager Rust tests stay green).
