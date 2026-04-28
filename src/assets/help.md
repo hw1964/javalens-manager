@@ -115,7 +115,9 @@ Each parametric tool's `kind` is a typed enum in the input schema with per-kind 
 
 `find_method_references` and the position-anchored search tools (`find_references`, `find_implementations`, `find_field_writes`, `find_tests`) stay as separate tools — their parameter shapes don't fit the consolidated kind-dispatched pattern.
 
-Coming in fork **v1.5.1** (LTK structural refactorings — Sprint 11 Phase E): `move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`. The manager will pick those up automatically through release-repo polling once the fork tag lands.
+Fork **v1.5.1** added five JDT-LTK structural refactoring tools (Sprint 11 Phase E): `move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`. They take a position (filePath / line / column zero-based) plus refactoring-specific arguments — see the per-tool descriptions exposed via `tools/list` for the exact parameters. Per-workspace tool count after v1.5.1: **60**.
+
+Known limitation in v1.5.1: `move_class` / `pull_up` / `push_down` / `encapsulate_field` use JDT's import-rewrite path which expects Eclipse JDT.UI preference defaults to be registered. Headless RCP runs (without `org.eclipse.jdt.ui` on the target platform) may need the workspace's `.metadata` to retain those defaults from a previous Eclipse run. `move_package` doesn't depend on this and works unconditionally. The full preference-init plumbing lands in v1.5.2.
 
 ### Selected Project Status
 
