@@ -25,7 +25,7 @@ A **workspace** is a named group of Java projects loaded into one JavaLens proce
 - **One workspace per cohesive task.** A bundle/multi-module application (e.g. JATS with 12 OSGi bundles), a monorepo, or a single project that you want isolated — each gets its own workspace.
 - **Live updates.** Add or remove a project from a workspace and the running JavaLens picks it up within ~1 second through a `workspace.json` file watcher. No MCP-client restart, no agent-session reload.
 - **No ports.** Workspaces are identified by name. There is no port range, no per-project port allocation, no port conflicts.
-- **Tool budget.** Each workspace contributes ~66 tools toward the agent's tool registration cap (Antigravity caps around 100). Stick to 1–3 active workspaces concurrently.
+- **Tool budget.** Each workspace contributes ~60 tools toward the agent's tool registration cap (Antigravity caps around 100). Stick to 1–3 active workspaces concurrently.
 - **Migration.** If you're upgrading from v0.10.3 or earlier, existing projects are auto-grouped into default workspaces named like `workspace-11100` (derived from the old `assignedPort`). Rename them through the Workspaces card or the workspace header.
 
 ---
@@ -104,9 +104,9 @@ Each of these opens a **target picker**: check Cursor / Claude / Antigravity / I
 
 **Cursor (length limit):** Cursor rejects tools when `serverName + ":" + toolName` exceeds about **59–60** characters. The manager keeps the generated `jl-` ids short so the longest JavaLens tool names still fit. **Antigravity** instead caps the total *number* of MCP tools registered across all servers (around 100 in current builds) — that is a separate constraint, and the main reason to keep concurrent workspaces small.
 
-### Tool surface (fork v1.5.0)
+### Tool surface (fork v1.5.x)
 
-JavaLens v1.5.0 registers **55 tools per workspace service** (down from 66 in v1.4.0). Two parametric tools replaced 13 narrow ones so multi-workspace setups have headroom under Antigravity's 100-tool cap.
+JavaLens v1.5.x registers **60 tools per workspace service** (66 in v1.4.0 → 55 after v1.5.0's parametric consolidation → 60 once v1.5.1's five LTK refactoring tools land). Two parametric tools replaced 13 narrow ones so multi-workspace setups have headroom under Antigravity's 100-tool cap.
 
 - **`find_pattern_usages(kind, query)`** — type-anchored searches. `kind ∈ { annotation, instantiation, type_argument, cast, instanceof }`. Replaces `find_annotation_usages` / `find_type_instantiations` / `find_type_arguments` / `find_casts` / `find_instanceof_checks`.
 - **`find_quality_issue(kind, ...)`** — code-quality analyses. `kind ∈ { naming, bugs, unused, large_classes, circular_deps, reflection, throws, catches }`. Replaces `find_naming_violations` / `find_possible_bugs` / `find_unused_code` / `find_large_classes` / `find_circular_dependencies` / `find_reflection_usage` / `find_throws_declarations` / `find_catch_blocks`.
@@ -117,7 +117,7 @@ Each parametric tool's `kind` is a typed enum in the input schema with per-kind 
 
 Fork **v1.5.1** added five JDT-LTK structural refactoring tools (Sprint 11 Phase E): `move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`. They take a position (filePath / line / column zero-based) plus refactoring-specific arguments — see the per-tool descriptions exposed via `tools/list` for the exact parameters. Per-workspace tool count after v1.5.1: **60**.
 
-Known limitation in v1.5.1: `move_class` / `pull_up` / `push_down` / `encapsulate_field` use JDT's import-rewrite path which expects Eclipse JDT.UI preference defaults to be registered. Headless RCP runs (without `org.eclipse.jdt.ui` on the target platform) may need the workspace's `.metadata` to retain those defaults from a previous Eclipse run. `move_package` doesn't depend on this and works unconditionally. The full preference-init plumbing lands in v1.5.2.
+Fork **v1.5.2** is a closeout patch. `move_class`, `move_package`, `pull_up`, and `push_down` now work without depending on a prior Eclipse session's `.metadata` — the JDT-UI initialization (preference defaults, code-template store, members-order cache, change-validation data) is done by JavaLens itself. `encapsulate_field` may still need `.metadata` from a prior Eclipse run, due to an upstream JDT bug in the setter-body fallback path. Drop-in upgrade, no API changes.
 
 ### Selected Project Status
 
@@ -157,7 +157,7 @@ If a probe fails, fix connectivity or runtime issues before relying on **Deploy 
 ### Machine Runtime Controls
 
 - **Manager data root** — Base directory for caches, logs, and JDT workspace indexes. Each workspace's data lives under `<data_root>/workspaces/<workspace-name>/` (which is also where `workspace.json` is written).
-- **Use system tray** — When enabled, closing the window keeps the manager running in the system tray.
+- **Use system tray** — When enabled, closing the window keeps the manager running in the system tray. *Linux note:* the tray relies on a StatusNotifierItem / AppIndicator host. Pop!_OS, Ubuntu 22.04+, KDE / XFCE / Cinnamon / MATE work out of the box; vanilla GNOME (Fedora Workstation, Debian GNOME) needs `gnome-shell-extension-appindicator` installed once. See the [README](https://github.com/hw1964/javalens-manager#system-tray-on-linux) for distro-specific install commands.
 - **Diagnostics** — Read-only summary: paths for the projects store, settings file, state directory, and resolved data root. **Workspaces** and **Project count** mirror the Dashboard totals, useful when reporting issues.
 - **Clean logs** — Removes manager runtime logs (workspaces and settings stay).
 - **Clean workspaces** — Removes JDT workspace caches (forces re-index next start).

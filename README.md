@@ -58,6 +58,15 @@ chmod +x javalens-manager_0.10.2_amd64.AppImage
 ./javalens-manager_0.10.2_amd64.AppImage
 ```
 
+### System tray on Linux
+
+`javalens-manager` exposes a system-tray icon for show / start / stop / quit, with per-workspace status icons from v0.12.0 onward. The tray relies on a **StatusNotifierItem / AppIndicator** host being available in your desktop environment:
+
+- **Pop!_OS, Ubuntu (22.04+), KDE Plasma, XFCE, Cinnamon, MATE** — works out of the box, nothing to install.
+- **Vanilla GNOME (Fedora Workstation, Debian GNOME)** — install `gnome-shell-extension-appindicator` once. On Fedora: `sudo dnf install gnome-shell-extension-appindicator && gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com`. On Debian: `sudo apt install gnome-shell-extension-appindicator`. Log out and back in after enabling.
+
+If the extension isn't installed, the manager itself still runs — you just won't see the tray icon. Disable the tray entirely from Settings → *Use system tray* if you'd rather it not try.
+
 ## What It Is
 
 `javalens-manager` is a desktop application for:
