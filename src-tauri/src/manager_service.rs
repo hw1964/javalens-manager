@@ -6,6 +6,7 @@ use crate::{
     release_manager::{ManagedRuntimeRecord, ReleaseManager, ReleaseStatus},
     runtime_manager::{
         RuntimeLaunchRequest, RuntimeManager, RuntimePhase, RuntimeReference, RuntimeStatusRecord,
+        WorkspaceStatusSummary,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -568,6 +569,47 @@ impl ManagerService {
         running
     }
 
+    /// Sprint 12 (v0.12.0): one summary entry per workspace_name, with a
+    /// phase aggregated from the workspace's member projects. Drives the
+    /// per-workspace tray-menu entries and their status icons.
+    ///
+    /// Workspaces with zero member projects are omitted (the tray has
+    /// nothing useful to show for them). Output is sorted by workspace_name
+    /// for deterministic menu ordering.
+    pub fn workspace_status_summary(&self) -> Vec<WorkspaceStatusSummary> {
+        let projects = self.config_store.list_projects();
+        let settings = self.config_store.get_settings();
+        let installed = self
+            .release_manager
+            .get_installed_runtime(&settings)
+            .ok()
+            .flatten();
+        let statuses = self.collect_runtime_statuses(&projects, &settings, installed.as_ref());
+
+        let mut by_ws: HashMap<String, Vec<RuntimePhase>> = HashMap::new();
+        for status in statuses.values() {
+            by_ws
+                .entry(status.workspace_name.clone())
+                .or_default()
+                .push(status.phase.clone());
+        }
+
+        let mut summaries: Vec<WorkspaceStatusSummary> = by_ws
+            .into_iter()
+            .map(|(workspace_name, phases)| {
+                let project_count = phases.len();
+                let phase = aggregate_workspace_phase(&phases);
+                WorkspaceStatusSummary {
+                    workspace_name,
+                    phase,
+                    project_count,
+                }
+            })
+            .collect();
+        summaries.sort_by(|a, b| a.workspace_name.cmp(&b.workspace_name));
+        summaries
+    }
+
     /// Determines if the application should minimize to the system tray on close.
     pub fn should_close_to_tray(&self) -> bool {
         let settings = self.config_store.get_settings();
@@ -802,6 +844,54 @@ impl ManagerService {
     /// Starts the runtime for a specific project. Writes workspace.json
     /// for the project's workspace before spawning so the spawning
     /// javalens picks up the full workspace member list.
+    /// Sprint 12 (v0.12.0): toggle every project in the named workspace —
+    /// stop them when the workspace's aggregated phase is Running or
+    /// Starting, start them otherwise (Stopped or Failed).
+    ///
+    /// Drives the per-workspace toggle entries in the system-tray menu;
+    /// the click event hands us a workspace_name and we drive the existing
+    /// per-project start/stop API for each member. Errors on individual
+    /// projects are collected; the caller gets a single summary.
+    pub fn toggle_workspace(&self, workspace_name: &str) -> Result<(), Vec<String>> {
+        let projects: Vec<ProjectRecord> = self
+            .config_store
+            .list_projects()
+            .into_iter()
+            .filter(|p| p.workspace_name == workspace_name)
+            .collect();
+        if projects.is_empty() {
+            return Err(vec![format!("Unknown workspace: {workspace_name}")]);
+        }
+
+        let current_phase = self
+            .workspace_status_summary()
+            .into_iter()
+            .find(|s| s.workspace_name == workspace_name)
+            .map(|s| s.phase);
+
+        let should_start = !matches!(
+            current_phase,
+            Some(RuntimePhase::Running) | Some(RuntimePhase::Starting)
+        );
+
+        let mut errors = Vec::new();
+        for project in projects {
+            let result = if should_start {
+                self.start_runtime(&project.id).map(|_| ())
+            } else {
+                self.stop_runtime(&project.id).map(|_| ())
+            };
+            if let Err(e) = result {
+                errors.push(format!("{}: {e}", project.name));
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+
     pub fn start_runtime(&self, project_id: &str) -> Result<RuntimeStatusRecord, String> {
         let project = self
             .config_store
@@ -2572,9 +2662,66 @@ pub(crate) fn write_workspace_json_to_dir(
     Ok(())
 }
 
+/// Sprint 12 (v0.12.0): apply the workspace-status aggregation rules to a
+/// list of per-project phases and return the workspace's overall phase.
+///
+/// Pure function (no `self`) so it's trivially unit-testable.
+fn aggregate_workspace_phase(phases: &[RuntimePhase]) -> RuntimePhase {
+    if phases.iter().any(|p| matches!(p, RuntimePhase::Failed)) {
+        RuntimePhase::Failed
+    } else if phases.iter().any(|p| matches!(p, RuntimePhase::Starting)) {
+        RuntimePhase::Starting
+    } else if !phases.is_empty()
+        && phases.iter().all(|p| matches!(p, RuntimePhase::Running))
+    {
+        RuntimePhase::Running
+    } else {
+        RuntimePhase::Stopped
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aggregate_workspace_phase_two_running_returns_running() {
+        let phases = vec![RuntimePhase::Running, RuntimePhase::Running];
+        assert!(matches!(
+            aggregate_workspace_phase(&phases),
+            RuntimePhase::Running
+        ));
+    }
+
+    #[test]
+    fn aggregate_workspace_phase_failed_dominates_running() {
+        let phases = vec![RuntimePhase::Running, RuntimePhase::Failed];
+        assert!(matches!(
+            aggregate_workspace_phase(&phases),
+            RuntimePhase::Failed
+        ));
+    }
+
+    #[test]
+    fn aggregate_workspace_phase_starting_dominates_running() {
+        let phases = vec![RuntimePhase::Running, RuntimePhase::Starting];
+        assert!(matches!(
+            aggregate_workspace_phase(&phases),
+            RuntimePhase::Starting
+        ));
+    }
+
+    #[test]
+    fn aggregate_workspace_phase_empty_or_stopped_returns_stopped() {
+        assert!(matches!(
+            aggregate_workspace_phase(&[]),
+            RuntimePhase::Stopped
+        ));
+        assert!(matches!(
+            aggregate_workspace_phase(&[RuntimePhase::Stopped, RuntimePhase::Stopped]),
+            RuntimePhase::Stopped
+        ));
+    }
 
     #[test]
     fn extract_tool_entries_reads_standard_tools_list_shape() {

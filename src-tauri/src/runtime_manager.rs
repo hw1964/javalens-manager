@@ -41,6 +41,23 @@ pub struct RuntimeStatusRecord {
     pub detail: String,
 }
 
+/// Sprint 12 (v0.12.0): one entry per workspace_name, with a phase
+/// aggregated from the workspace's member projects. Used by the system-tray
+/// menu to render per-workspace status icons and toggle entries.
+///
+/// Aggregation rules (applied in order):
+///   any project Failed   → Failed
+///   else any Starting    → Starting
+///   else all Running     → Running
+///   else (Stopped/empty) → Stopped
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceStatusSummary {
+    pub workspace_name: String,
+    pub phase: RuntimePhase,
+    pub project_count: usize,
+}
+
 impl RuntimeStatusRecord {
     pub fn unresolved(
         project_id: String,

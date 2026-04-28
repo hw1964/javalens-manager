@@ -157,7 +157,16 @@ If a probe fails, fix connectivity or runtime issues before relying on **Deploy 
 ### Machine Runtime Controls
 
 - **Manager data root** — Base directory for caches, logs, and JDT workspace indexes. Each workspace's data lives under `<data_root>/workspaces/<workspace-name>/` (which is also where `workspace.json` is written).
-- **Use system tray** — When enabled, closing the window keeps the manager running in the system tray. *Linux note:* the tray relies on a StatusNotifierItem / AppIndicator host. Pop!_OS, Ubuntu 22.04+, KDE / XFCE / Cinnamon / MATE work out of the box; vanilla GNOME (Fedora Workstation, Debian GNOME) needs `gnome-shell-extension-appindicator` installed once. See the [README](https://github.com/hw1964/javalens-manager#system-tray-on-linux) for distro-specific install commands.
+- **Use system tray** — When enabled, closing the window keeps the manager running in the system tray. The tray menu (since v0.12.0) lets you drive workspace lifecycle without opening the window:
+
+  ![Tray menu](/help/tray-menu.png)
+
+  - **Show** — bring the main window forward.
+  - **Per-workspace entries** — one row per workspace with a colored status circle (🟢 running, 🟡 starting, 🔴 failed, ⚪ stopped). Click an entry to **toggle** that workspace: stopped/failed → start, running/starting → stop. Status icons refresh every ~5 s, so external state changes (e.g. a workspace's javalens process getting killed from the shell) propagate without you opening the window.
+  - **Start all services / Stop all services** — fan out across every loaded workspace.
+  - **Quit** — opens the quit prompt.
+
+  *Linux note:* the tray relies on a StatusNotifierItem / AppIndicator host. Pop!_OS, Ubuntu 22.04+, KDE / XFCE / Cinnamon / MATE work out of the box; vanilla GNOME (Fedora Workstation, Debian GNOME) needs `gnome-shell-extension-appindicator` installed once. See the [README](https://github.com/hw1964/javalens-manager#system-tray-on-linux) for distro-specific install commands.
 - **Diagnostics** — Read-only summary: paths for the projects store, settings file, state directory, and resolved data root. **Workspaces** and **Project count** mirror the Dashboard totals, useful when reporting issues.
 - **Clean logs** — Removes manager runtime logs (workspaces and settings stay).
 - **Clean workspaces** — Removes JDT workspace caches (forces re-index next start).

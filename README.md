@@ -6,24 +6,17 @@ Desktop manager for running and orchestrating JavaLens MCP servers across multip
 
 ## Status
 
-**Beta (v0.10.2)**: `javalens-manager` is a fully functional desktop application on Linux. It supports registering multiple Java projects, automatically downloading and managing JavaLens runtimes, and deploying MCP configurations directly to Cursor, Claude Desktop, Antigravity, and IntelliJ. While feature-complete for Linux, broader OS support and QA testing are ongoing before a stable 1.0 release.
+**Beta (v0.12.0)**: `javalens-manager` is a fully functional desktop application on Linux. It supports named workspaces of multiple Java projects (each running as one shared JavaLens MCP service), live `workspace.json`-driven reconciliation, automatic fork-runtime download/update, and one-click deploy of MCP entries into Cursor / Claude Desktop / Antigravity / IntelliJ-style configs. The system-tray menu (since v0.12.0) drives per-workspace lifecycle without opening the window. macOS and Windows builds are not yet automated; broader QA and cross-platform testing continue before a stable 1.0.
 
-### What's new in v0.10.2
+### Version timeline
 
-- **Icon iteration.** The intermediate dark-navy ring from v0.10.1 is gone — the slate body now extends fully to the canvas edge, and the magnifying glass + J inside are enlarged ~14% to fill the freed space. Cleaner against any dock/taskbar theme.
+- **v0.9.x** (Sprint 7) — initial Tauri shell, project registry, per-project runtime spawn.
+- **v0.10.0–v0.10.6** (Sprint 9 + Sprint 10) — configurable release source (fork by default), source-resolution fix (Maven `<sourceDirectory>` / Eclipse `.classpath`), named workspaces, multi-select bulk move + drag-drop, workspace-first dashboard, `workspace.json` file-watcher for live updates.
+- **v0.11.0** — Sprint 11 cutover; Help.md / README updates for fork v1.5.0's tool consolidation (66 → 55 tools) and v1.5.1's five JDT-LTK structural-refactoring tools (60 tools per service).
+- **v0.11.1** — Sprint 11 closeout; refreshed help screenshots; help/README cross-links for the new "System tray on Linux" caveat.
+- **v0.12.0** — Sprint 12 (this release): tray menu lifecycle controls — per-workspace toggle entries with live status icons (running / starting / failed / stopped), Start all / Stop all peers, 5-second background refresh so external state changes (process death) propagate. Paired with [fork v1.6.0](https://github.com/hw1964/javalens-mcp/releases/tag/v1.6.0) which adds `compile_workspace` and `run_tests` (62 tools per service).
 
-### What's new in v0.10.1
-
-- **Icon refresh (intermediate).** The cream-white outer ring was repainted to a very dark navy (`#0c1838`). v0.10.2 takes this further and removes the ring entirely — see above.
-- **Discover and Import-selected button states.** After Discover finishes, the button greys out (re-clicking the same path is a no-op). After a successful workspace import, the form resets — workspace file, candidates, and selection all clear so the form is ready for the next operation.
-
-### What's new in v0.10.0
-
-- **Release source is configurable.** Settings → JavaLens Runtime → *Release source* lets you switch between the maintained fork (default), the original upstream, or a custom GitHub repo. Switching the dropdown auto-saves and pulls the new repo's latest jar in one click.
-- **Source-resolution fix shipped via the fork.** `javalens-mcp` 1.2.1 (in the fork) honors Maven `<sourceDirectory>` / `<testSourceDirectory>` overrides and Eclipse `.classpath` `kind="src"` / `kind="lib"` entries. Hybrid Maven+PDE projects and non-conventional Eclipse layouts are now indexed correctly.
-- **Settings UI decluttered.** The Runtime panel drops the always-visible status chips and Refresh button; auto-update on dashboard load covers refreshes, and a Download button appears only when an update is actually available.
-- **Bug fix: project list refresh.** Adding a second project via the form no longer lands on a stale port; the form re-arms the suggested port after each successful save. Stale "Unknown project id" errors after deletion are also gone.
-- **Polish.** Equal-height Settings panels, full-width Discover button, primary-blue button color only when the action is actually clickable.
+See [`docs/release-notes/`](docs/release-notes/) for per-release detail.
 
 ## Docs
 
@@ -54,8 +47,8 @@ Alternatively, you can download the `.deb` or `.AppImage` files manually from th
 If you launch the `.AppImage` manually, ensure it has executable permission first:
 
 ```bash
-chmod +x javalens-manager_0.10.2_amd64.AppImage
-./javalens-manager_0.10.2_amd64.AppImage
+chmod +x javalens-manager_0.12.0_amd64.AppImage
+./javalens-manager_0.12.0_amd64.AppImage
 ```
 
 ### System tray on Linux
@@ -111,16 +104,22 @@ This project exists to provide a higher-level desktop experience for people who 
 - Replace IDE-native Java tooling
 - Bundle proprietary project-specific integrations into this repository
 
-## Planned Features
+## Shipped today
 
-- project registry
-- start / stop / restart controls per project
-- health and status display
-- log viewing
-- workspace and runtime management
-- generated MCP client configuration where useful
-- system tray integration
-- preferences for ports, paths, and startup behavior
+- Named workspaces of multiple Java projects (one shared MCP service per workspace).
+- Live workspace updates via `workspace.json` file-watcher (no MCP-client restart needed).
+- Workspace-first dashboard with multi-select bulk move + drag-drop between workspaces.
+- Per-workspace and global start / stop / restart, with health and status display.
+- Auto-download and auto-update of the JavaLens runtime from a configurable release source (fork by default).
+- One-click deploy of MCP entries into Cursor / Claude Desktop / Antigravity / IntelliJ-style configs, with safe-merge or replace-managed-section semantics, optional pre-write backups, and dry-run mode.
+- System-tray icon with per-workspace toggle entries, live status icons, Start all / Stop all (since v0.12.0).
+- Diagnostics, log cleanup, JDT-workspace cleanup, "start from scratch" reset.
+
+## Planned
+
+- macOS and Windows packaging in CI.
+- Broader QA, cross-platform testing, and edge-case hardening.
+- Auto-update UX after the .AppImage download (currently the user replaces the binary by hand).
 
 ## Architecture Direction
 
@@ -144,17 +143,21 @@ If you need semantic Java analysis, navigation, refactoring, or diagnostics, tho
 
 ## Roadmap
 
-### Current Focus
-- Cross-platform testing (macOS, Windows)
-- Broader QA and edge-case testing
-- Automated updates and binary patching
+### Current focus
+- Cross-platform packaging (macOS, Windows) in CI.
+- v1.6.1 fork release: Tycho-test fixture-build pipeline so the disabled `run_tests` happy-path tests run; cross-bundle `compile_workspace` integration test.
 
-### Completed
-- **Sprint 8:** Packaging and Distribution (Automated GitHub Releases, Linux `.deb` and `.AppImage` installers, auto-update UX)
-- **Sprint 6:** Radical simplification and global configuration
-- **Sprint 5:** Paths, workspace overrides, and Dashboard vs Settings UX
-- **Sprint 2:** Managed-runtime upgrades and team split
-- **Sprint 1:** First runnable slice (Project registry, start/stop controls, health display)
+### Completed (manager-side)
+- **Sprint 12 (v0.12.0):** Tray menu lifecycle controls — per-workspace toggle entries with live status icons, Start all / Stop all, 5-second background refresh.
+- **Sprint 11 (v0.11.0–v0.11.1):** Cutover for fork v1.5.0–v1.5.2 (Tycho-aware Maven, workspace bundle pool for `Require-Bundle`, Gradle Tooling API, parametric tool consolidation, JDT-LTK structural refactorings).
+- **Sprint 10 (v0.10.4–v0.10.6):** Named workspaces, multi-select bulk move + drag-drop, workspace-first dashboard, `workspace.json` file-watcher.
+- **Sprint 9 (v0.10.0–v0.10.3):** Configurable release source, fork-default runtime, source-resolution fix shipped via fork v1.2.1.
+- **Sprint 8:** Packaging and distribution (automated GitHub Releases, Linux `.deb` and `.AppImage` installers).
+- **Sprint 7 (v0.9.x):** Tauri shell, system-tray scaffolding, initial deploy-to-agents flow.
+- **Sprint 6:** Radical simplification and global configuration.
+- **Sprint 5:** Paths, workspace overrides, and Dashboard vs Settings UX.
+- **Sprint 2:** Managed-runtime upgrades and team split.
+- **Sprint 1:** First runnable slice — project registry, start/stop controls, health display.
 
 ## Tech Stack
 
