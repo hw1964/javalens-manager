@@ -32,7 +32,9 @@ A **workspace** is a named group of Java projects loaded into one JavaLens proce
 
 ## Dashboard
 
-![Dashboard overview](/help/dashboard.png)
+![Dashboard — top half: Workspaces card, Register Project, Managed Projects header](/help/dashboard-top.png)
+
+![Dashboard — bottom half: Managed Projects rows + Selected Project Status strip](/help/dashboard-bottom.png)
 
 *Workspaces card and Register Project on the left; grouped Managed Projects with the Agent deploy strip on the right; selected project status across the bottom.*
 
@@ -104,20 +106,26 @@ Each of these opens a **target picker**: check Cursor / Claude / Antigravity / I
 
 **Cursor (length limit):** Cursor rejects tools when `serverName + ":" + toolName` exceeds about **59–60** characters. The manager keeps the generated `jl-` ids short so the longest JavaLens tool names still fit. **Antigravity** instead caps the total *number* of MCP tools registered across all servers (around 100 in current builds) — that is a separate constraint, and the main reason to keep concurrent workspaces small.
 
-### Tool surface (fork v1.5.x)
+### Tool surface (fork v1.7.x)
 
-JavaLens v1.5.x registers **60 tools per workspace service** (66 in v1.4.0 → 55 after v1.5.0's parametric consolidation → 60 once v1.5.1's five LTK refactoring tools land). Two parametric tools replaced 13 narrow ones so multi-workspace setups have headroom under Antigravity's 100-tool cap.
+JavaLens v1.7.x registers **73 tools per workspace service** (66 in v1.4.0 → 55 after v1.5.0's parametric consolidation → 60 with v1.5.1's LTK refactorings → 62 with v1.6.0's verification tools → 73 with v1.7.0's Ring 2/3/4 expansion). Two parametric tools (`find_pattern_usages` / `find_quality_issue`) absorbed 13 narrow ones in v1.5.0 so multi-workspace setups have headroom under Antigravity's 100-tool cap.
 
-- **`find_pattern_usages(kind, query)`** — type-anchored searches. `kind ∈ { annotation, instantiation, type_argument, cast, instanceof }`. Replaces `find_annotation_usages` / `find_type_instantiations` / `find_type_arguments` / `find_casts` / `find_instanceof_checks`.
-- **`find_quality_issue(kind, ...)`** — code-quality analyses. `kind ∈ { naming, bugs, unused, large_classes, circular_deps, reflection, throws, catches }`. Replaces `find_naming_violations` / `find_possible_bugs` / `find_unused_code` / `find_large_classes` / `find_circular_dependencies` / `find_reflection_usage` / `find_throws_declarations` / `find_catch_blocks`.
+- **`find_pattern_usages(kind, query)`** — type-anchored searches. `kind ∈ { annotation, instantiation, type_argument, cast, instanceof }`.
+- **`find_quality_issue(kind, ...)`** — code-quality analyses. `kind ∈ { naming, bugs, unused, large_classes, circular_deps, reflection, throws, catches }`.
 
-Each parametric tool's `kind` is a typed enum in the input schema with per-kind descriptions, so agents can discover what's available through `tools/list`.
+Each parametric tool's `kind` is a typed enum in the input schema with per-kind descriptions, so agents can discover what's available through `tools/list`. `find_method_references` and the position-anchored search tools stay as separate tools.
 
-`find_method_references` and the position-anchored search tools (`find_references`, `find_implementations`, `find_field_writes`, `find_tests`) stay as separate tools — their parameter shapes don't fit the consolidated kind-dispatched pattern.
+**Refactoring (since v1.5.1)** — five JDT-LTK structural refactorings: `move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`. They take a position (filePath / line / column, zero-based) plus refactoring-specific arguments. v1.5.2 closeout patch made `move_class` / `move_package` / `pull_up` / `push_down` work without a prior Eclipse session's `.metadata`; `encapsulate_field`'s happy-path is still pending an upstream JDT fix.
 
-Fork **v1.5.1** added five JDT-LTK structural refactoring tools (Sprint 11 Phase E): `move_class`, `move_package`, `pull_up`, `push_down`, `encapsulate_field`. They take a position (filePath / line / column zero-based) plus refactoring-specific arguments — see the per-tool descriptions exposed via `tools/list` for the exact parameters. Per-workspace tool count after v1.5.1: **60**.
+**Workspace verification (since v1.6.0)** — `compile_workspace` runs `IncrementalProjectBuilder` over every loaded project and aggregates `IMarker.PROBLEM` markers (compile errors, classpath errors, manifest errors) — same path Eclipse IDE's Problems view uses, catches cascading errors that per-file `get_diagnostics` misses. `run_tests` launches JUnit 4 / 5 / TestNG via JDT-LTK's launching delegate, headless, with method/class/package scope and parsed pass/fail/skip results.
 
-Fork **v1.5.2** is a closeout patch. `move_class`, `move_package`, `pull_up`, and `push_down` now work without depending on a prior Eclipse session's `.metadata` — the JDT-UI initialization (preference defaults, code-template store, members-order cache, change-validation data) is done by JavaLens itself. `encapsulate_field` may still need `.metadata` from a prior Eclipse run, due to an upstream JDT bug in the setter-body fallback path. Drop-in upgrade, no API changes.
+**Code generation (since v1.7.0)** — six tools that bypass the small mistakes agents make hand-writing modifiers/generics/annotations. All built via `ASTRewrite` directly (no `org.eclipse.jdt.ui` dep): `generate_constructor`, `generate_getters_setters`, `generate_equals_hashcode`, `generate_tostring`, `override_methods` (query mode lists overridable signatures; generate mode emits `@Override` stubs), `generate_test_skeleton` (writes a JUnit class to the `src/test/java` mirror).
+
+**Build & dependency management (since v1.7.0, Maven-only)** — `add_dependency` and `update_dependency` mutate `pom.xml` text-level (preserves user formatting + comments); `find_unused_dependencies` is read-only and heuristic (groupId-prefix or artifactId-substring match against source imports). Gradle/Buildship support is explicitly v1.8.x.
+
+**Workflow polish (since v1.7.0)** — `format` (file/package/project/workspace scope, honours the project's own `.settings/org.eclipse.jdt.core.prefs`); `optimize_imports_workspace` (workspace fan-out of import optimisation, idempotent).
+
+One v1.7.0 happy-path test ships `@Disabled` (`generate_test_skeleton` auto-detect path) due to the same Tycho-surefire fixture-build gap that has Sprint 12's `run_tests` happy-paths disabled. Production usage works against real workspaces; the test fixture's external Maven deps don't resolve onto JDT's classpath in the test runtime. v1.6.1 follow-up.
 
 ### Selected Project Status
 
@@ -157,14 +165,21 @@ If a probe fails, fix connectivity or runtime issues before relying on **Deploy 
 ### Machine Runtime Controls
 
 - **Manager data root** — Base directory for caches, logs, and JDT workspace indexes. Each workspace's data lives under `<data_root>/workspaces/<workspace-name>/` (which is also where `workspace.json` is written).
-- **Use system tray** — When enabled, closing the window keeps the manager running in the system tray. The tray menu (since v0.12.0) lets you drive workspace lifecycle without opening the window:
+- **Use system tray** — When enabled, closing the window keeps the manager running in the system tray. The tray menu (refined in v0.13.0) lets you drive workspace lifecycle without opening the window:
 
-  ![Tray menu](/help/tray-menu.png)
+  ![Tray menu — Open dashboard, per-workspace rows with monochrome status bullets, Start all / Stop all / Quit](/help/tray-menu.png)
 
-  - **Show** — bring the main window forward.
-  - **Per-workspace entries** — one row per workspace with a colored status circle (🟢 running, 🟡 starting, 🔴 failed, ⚪ stopped). Click an entry to **toggle** that workspace: stopped/failed → start, running/starting → stop. Status icons refresh every ~5 s, so external state changes (e.g. a workspace's javalens process getting killed from the shell) propagate without you opening the window.
+  - **Open dashboard** — raises the main manager window (its default view is the dashboard).
+  - **Workspaces** — one row per workspace with a monochrome status bullet:
+    - `●` running
+    - `◐` starting / stopping
+    - `○` stopped
+    - `✗` failed
+    Click a row to **toggle** that workspace: stopped/failed → start, running → stop. The bullet refreshes within ~1 s of any state change (rename in the dashboard, external `kill` of a javalens process, manual start/stop in the main window).
   - **Start all services / Stop all services** — fan out across every loaded workspace.
   - **Quit** — opens the quit prompt.
+
+  *Why monochrome bullets?* GNOME's `gnome-shell-extension-appindicator` strips per-menu-item images at the D-Bus boundary, so the colored status disks shipped in v0.12.0 never reached the user. Monochrome unicode shapes render in the menu's own font (1× line height) and survive the appindicator pipe across every Linux desktop we ship to.
 
   *Linux note:* the tray relies on a StatusNotifierItem / AppIndicator host. Pop!_OS, Ubuntu 22.04+, KDE / XFCE / Cinnamon / MATE work out of the box; vanilla GNOME (Fedora Workstation, Debian GNOME) needs `gnome-shell-extension-appindicator` installed once. See the [README](https://github.com/hw1964/javalens-manager#system-tray-on-linux) for distro-specific install commands.
 - **Diagnostics** — Read-only summary: paths for the projects store, settings file, state directory, and resolved data root. **Workspaces** and **Project count** mirror the Dashboard totals, useful when reporting issues.

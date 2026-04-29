@@ -586,12 +586,24 @@ impl ManagerService {
             .flatten();
         let statuses = self.collect_runtime_statuses(&projects, &settings, installed.as_ref());
 
+        // Sprint 13 (v0.13.0): group by `project.workspace_name` from the
+        // live config_store, NOT by `status.workspace_name`. The runtime
+        // manager caches `RuntimeStatusRecord`s keyed by project_id and
+        // returns the cached snapshot from `get_runtime_status`; the
+        // snapshot's `workspace_name` is the value seen at last start /
+        // stop. After a rename in the dashboard, the cached snapshot
+        // still has the old name and the tray menu would lag the rename
+        // until the workspace is restarted. Reading workspace_name from
+        // the project (config_store mutex, always fresh) closes that
+        // loop — the menu reflects the rename within one refresh tick.
         let mut by_ws: HashMap<String, Vec<RuntimePhase>> = HashMap::new();
-        for status in statuses.values() {
-            by_ws
-                .entry(status.workspace_name.clone())
-                .or_default()
-                .push(status.phase.clone());
+        for project in &projects {
+            if let Some(status) = statuses.get(&project.id) {
+                by_ws
+                    .entry(project.workspace_name.clone())
+                    .or_default()
+                    .push(status.phase.clone());
+            }
         }
 
         let mut summaries: Vec<WorkspaceStatusSummary> = by_ws

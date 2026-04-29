@@ -2,6 +2,33 @@
 
 > **Status: draft, written 2026-04-29 after Sprint 12 shipped (fork v1.6.0 + manager v0.12.0).** Sprint 12 left one item unfinished — the new tray-menu screenshot for `public/help/tray-menu.png` and the help.md embed pointing at it. That work carries into Sprint 13 Phase A (still under manager v0.13.0).
 
+> **Design pivot — 2026-04-30.** Fork v1.7.0 shipped on schedule (`fc25acf`, tag `v1.7.0`, 73 tools). Manager v0.13.0 was about to ship the Sprint 12 GTK tray menu with the deferred screenshots, but empirical testing on the user's GNOME setup confirmed the per-menu-item `IconMenuItem` icons are stripped at the AppIndicator D-Bus boundary — the colored circles never reach the user. Two fallbacks were tested and rejected (oversized emoji glyphs; monochrome small bullets — each loses either size or colour). **Decision:** pivot the v0.13.0 deliverable to a Tauri webview popover that replaces the GTK system menu entirely. Full HTML/CSS/Svelte control gives small + coloured + right-aligned + click-without-dismiss + animated transitions in one path. ~5 days work; pushes v0.13.0 ship by ~1 week. Detailed executable plan: [`~/.claude/plans/make-a-plan-happy-fern.md`](../../../.claude/plans/make-a-plan-happy-fern.md). This backlog stays as the historical Sprint 13 narrative; the popover plan is what actually ships under the v0.13.0 tag. Sections below that referenced the GTK menu (Phase A tray screenshots, Phase E cutover) are annotated with their pivot status.
+
+> **Final design — 2026-04-30, end of day.** v0.13.0 ships a **native dynamic menu, NOT the popover**. Empirical testing on the user's GNOME revealed three constraints that together kill the popover approach: (1) libayatana-appindicator hard-requires every indicator to have a menu — a menu-less indicator never registers and is invisible; (2) left-click on the indicator routes directly to the menu — `on_tray_icon_event` doesn't fire on this setup, `show_menu_on_left_click(false)` is silently ignored; (3) `IconMenuItem` images are stripped at the D-Bus boundary. The "menu + popover via menu item" detour was rejected as worse UX than a polished native menu.
+>
+> **Final v0.13.0 menu shape:**
+>
+> ```
+> Open dashboard            (raises the full manager window)
+> ─────
+> Workspaces                (disabled header)
+>   ●  Javalens_WS          (toggle on click — bullet reflects phase)
+>   ○  ORB_JATS_WS
+> ─────
+> Start all services
+> Stop all services
+> ─────
+> Quit
+> ```
+>
+> Bullets: `●` running, `◐` starting, `○` stopped, `✗` failed — monochrome unicode shapes that render in the menu's own font (1× line height), unlike emoji glyphs which dominate at fixed pixel size.
+>
+> Plus a real bug fix: `workspace_status_summary` now reads `workspace_name` from the live `config_store.list_projects()` mutex (always fresh after rename) instead of from the runtime-manager's cached status snapshots — closes a stale-name-after-rename loop the user empirically hit. Without this fix, renaming a workspace in the dashboard left the tray menu showing the old name until the workspace was started.
+>
+> Refresh strategy: 1-second poll with cache-keyed change detection. The menu only rebuilds + swaps when the `(workspace_name, phase)` snapshot actually changed, so steady state is silent (no flicker). Renames / starts / stops / external process deaths propagate within ~1 s.
+>
+> All popover code/files removed (no `tray.html`, no `TrayPopover.svelte`, no `WebviewWindowBuilder` imports, no popover-only Tauri commands). The architectural lesson — AppIndicator on GNOME constraints make rich tray UI fundamentally impossible without bypassing the system tray entirely — is documented inline in `lib.rs`.
+
 ## Goal
 
 Close the **"fully autonomous Java agent"** gap. After Sprint 12, an agent can navigate, search, analyze, refactor, run quick fixes, compile, and run tests through MCP. What's still missing — every gap that costs an agent iterations because it has to hand-edit Java/XML when JDT could do it correctly first time:
@@ -71,7 +98,11 @@ Total ~2 weeks of focused work.
 
 UI rule, restated: never write user-facing docs ahead of the code that backs them. Phase B/C/D ship 11 tools; whatever they actually deliver is what Phase E describes. Drafting docs before that risks promising things the tools don't quite do.
 
-## Phase A — Tray screenshots (USER STEP)
+## Phase A — Tray screenshots (USER STEP) — **OBSOLETE per 2026-04-30 design pivot**
+
+> The original Phase A captured the v0.12.0 GTK tray menu as a deferred Sprint 12 carry-over. With the GTK menu being removed entirely in v0.13.0 and replaced by a Tauri webview popover, **nothing of the v0.12.0 menu surface survives to be screenshotted**. The deferred screenshot work is replaced by the popover plan's Phase D.1 (capture popover + tray-icon screenshots once the popover is built). The `tray-icon.png` capture itself stays — only the bar/panel icon, unchanged by the pivot — and lives in the popover plan.
+>
+> Original Phase A text retained below for sprint-history reference; do not execute.
 
 **Why standalone, not bundled with the manager release:** v0.12.0 shipped to GitHub on 2026-04-29 without `public/help/tray-menu.png` (the screenshot is a USER STEP — requires `npx tauri dev` running with two workspaces in different states, can't be automated headlessly). Sprint 13 captures it once and stages the PNGs in `public/help/`. They get bundled into the manager v0.13.0 commit at Phase E.4.
 
@@ -411,6 +442,10 @@ toolRegistry.register(new OptimizeImportsWorkspaceTool(() -> jdtService));
 
 ## Phase E — Cutover release
 
+> **Status (2026-04-30):** E.1 and E.2 **shipped** (full reactor verify ran clean — 122/122 core + 446/446 mcp tests, 5 `@Disabled`; fork v1.7.0 tagged at commit `fc25acf` and pushed). E.3 and E.4 are **superseded by the popover plan**: the manager's help.md edits + v0.13.0 cutover are sequenced under the popover plan's Phase D.2 / D.3 (Sprint 13 D.4 / D.5 carry-overs). E.3's tray-section embed in particular is fully rewritten there because the popover replaces the GTK menu it originally documented.
+>
+> Original E.1–E.4 retained below for sprint-history reference.
+
 ### E.1 Final full reactor verify (THE ONLY full run of the sprint)
 
 ```bash
@@ -481,11 +516,11 @@ Verify rendering with `npx tauri dev`'s help-page reload — both new images ren
 
 | Repo / Path | Phase | Change |
 |---|---|---|
-| `javalens-manager/public/help/tray-menu.png` | A.1 | NEW — tray menu open, captured by user (committed at E.4) |
-| `javalens-manager/public/help/tray-icon.png` | A.1 | NEW — tray icon at rest, captured by user (committed at E.4) |
-| `javalens-manager/src/assets/help.md` | E.3 | Tray screenshot embeds + "Tool surface (fork v1.7.x)" rewrite — written *after* fork v1.7.0 ships |
-| `javalens-manager/{package.json, src-tauri/Cargo.toml, src-tauri/tauri.conf.json}` | A.3 | 0.13.0 |
-| `javalens-manager/docs/release-notes/v0.13.0.md` | A.3 | NEW |
+| ~~`javalens-manager/public/help/tray-menu.png`~~ | A.1 | **OBSOLETE per design pivot** — replaced by `tray-popover.png` in popover plan D.1 |
+| `javalens-manager/public/help/tray-icon.png` | popover plan D.1 | NEW — tray icon at rest, captured by user (unchanged by pivot) |
+| `javalens-manager/src/assets/help.md` | popover plan D.2 | Tray section rewritten for popover model + "Tool surface (fork v1.7.x)" rewrite |
+| `javalens-manager/{package.json, src-tauri/Cargo.toml, src-tauri/tauri.conf.json}` | popover plan D.3 | 0.13.0 |
+| `javalens-manager/docs/release-notes/v0.13.0.md` | popover plan D.3 | NEW |
 | `javalens-mcp/.../tools/codegen/GenerateConstructorTool.java` | B.1 | NEW |
 | `javalens-mcp/.../tools/codegen/GenerateGettersSettersTool.java` | B.2 | NEW |
 | `javalens-mcp/.../tools/codegen/GenerateEqualsHashCodeTool.java` | B.3 | NEW |
@@ -565,14 +600,13 @@ npx tauri dev   # for tray-menu.png screenshot capture
 
 ## Definition of Done
 
-- [ ] Phase A: `public/help/tray-menu.png` + `public/help/tray-icon.png` captured (held aside for E.4 commit; not committed yet on its own).
-- [ ] Phase B: 6 codegen tools shipped, registered, focused tests green (12/12).
-- [ ] Phase C: 3 dep-management tools shipped, registered, focused tests green (6/6).
-- [ ] Phase D: 2 workflow tools shipped, registered, focused tests green (4/4).
-- [ ] Phase E.1: full reactor `mvn clean verify` green (122 core + 446 mcp + 4 `@Disabled` carrying through).
-- [ ] Phase E.2: Fork v1.7.0 tagged + published.
-- [ ] Phase E.3: Help.md tray-section embed + "Tool surface (fork v1.7.x)" rewrite written **against the actually-shipped tool inventory**, not the sprint-start draft.
-- [ ] Phase E.4: Manager v0.13.0 tagged + published as Latest, single commit bundling A.1 screenshots + E.3 help.md + version bumps + release notes.
-- [ ] Per-workspace tool count is **73** (`health_check` confirms).
-- [ ] Zero AI-attribution boilerplate in any commit, release note, or doc produced during the sprint.
-- [ ] No regression on Sprint 11 / 12 fixtures (existing 424 mcp.tests + 122 core.tests + 42 manager Rust tests stay green).
+- [x] ~~Phase A: tray screenshots~~ — **OBSOLETE per design pivot.** v0.13.0 ships the webview popover; the GTK menu is removed. Popover screenshots are captured under the popover plan's Phase D.1 instead.
+- [x] Phase B: 6 codegen tools shipped, registered, focused tests green (12/12 + 1 @Disabled). **Done.**
+- [x] Phase C: 3 dep-management tools shipped, registered, focused tests green (6/6). **Done.**
+- [x] Phase D: 2 workflow tools shipped, registered, focused tests green (4/4). **Done.**
+- [x] Phase E.1: full reactor `mvn clean verify` green (122 core + 446 mcp + 5 `@Disabled` carrying through). **Done.**
+- [x] Phase E.2: Fork v1.7.0 tagged + published (commit `fc25acf`, tag `v1.7.0`). **Done.**
+- [ ] ~~Phase E.3 / E.4~~ — **Superseded by popover plan.** Manager v0.13.0 ships the webview popover; help.md edits + cutover sequence are under the popover plan's Phase D.2 / D.3. See [`~/.claude/plans/make-a-plan-happy-fern.md`](../../../.claude/plans/make-a-plan-happy-fern.md).
+- [x] Per-workspace tool count is **73** (`health_check` confirms). **Done** (in fork v1.7.0).
+- [ ] Zero AI-attribution boilerplate in any commit, release note, or doc produced during the sprint. (carries through popover plan)
+- [ ] No regression on Sprint 11 / 12 fixtures (existing 424 mcp.tests + 122 core.tests + 42 manager Rust tests stay green). (popover plan keeps the 42-Rust-tests requirement.)
