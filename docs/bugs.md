@@ -8,6 +8,53 @@ For each entry include: ID, date observed, severity, reproducer, expected vs act
 
 ---
 
+## #3 — Launching the app while already running spawns a second instance (and a second tray icon)
+
+- **Status:** OPEN
+- **Date observed:** 2026-05-11
+- **Reporter:** Harald
+- **Server version:** all versions through manager v0.13.1.
+- **Severity:** MEDIUM — UX confusion + risk of two manager processes racing on the same `~/.config/javalens-manager/projects.json` and the same workspace JVMs. Two tray icons appearing for one app is the visible symptom; the underlying problem is the absence of single-instance enforcement.
+
+### Reproducer
+
+1. Launch `javalens-manager` — it appears in the system tray.
+2. Close the window (or send it to the tray) so only the tray icon remains.
+3. Click the `javalens-manager` entry in the GNOME app menu (or run `~/.local/bin/javalens-manager` from a shell) a second time.
+4. Observe: a **new** manager window opens and a **second** tray icon appears alongside the original.
+
+### Expected
+
+The single-instance pattern most desktop apps follow: a second launch either (a) raises the existing window if it's hidden / minimised, OR (b) is a no-op when the existing window is already visible. The tray icon must remain a single instance regardless. Same pattern as Slack / Spotify / VS Code / virtually every Tauri-bundled app with system-tray integration.
+
+### Actual
+
+Each invocation creates a separate JVM-monitoring process with its own webview window, its own tray icon, its own poller threads watching the same workspace JVMs. The two manager processes are not aware of each other.
+
+### Suspected root cause
+
+`src-tauri/src/lib.rs` does not register `tauri-plugin-single-instance`. Without it, Tauri's `tauri::Builder` happily spawns a fresh app per process. The plugin is the standard Tauri-ecosystem solution: a platform-specific IPC mechanism (Unix domain socket on Linux/macOS, named pipe on Windows) detects when a second invocation occurs and either exits the new instance after firing a hook on the original, or hands the new instance's CLI args off to the original.
+
+### Suggested fix
+
+1. Add `tauri-plugin-single-instance` to `src-tauri/Cargo.toml` and register it as the **first** plugin in `tauri::Builder::default().plugin(...)` chain — earlier the better so the second-instance exit happens before any expensive setup.
+2. In the single-instance hook (passed to the plugin's setup): get the `main` webview window via `app.get_webview_window("main")`, call `.unminimize()`, `.show()`, `.set_focus()`. If the window is already visible, the calls are no-ops.
+3. Verify on both X11 and Wayland: GNOME may behave differently for `set_focus()` — the standard pattern is to also call `.request_user_attention(Some(UserAttentionType::Informational))` as a fallback so the taskbar entry pulses if focus-stealing is blocked.
+4. Side effects to confirm:
+   - Tray icon stays singular (it's registered only once on the original process).
+   - The release-poller and the periodic `refresh_tray_menu` thread don't double up.
+   - `commands::quit_app` from either window terminates the *one* process cleanly (the second-instance path no longer exists by construction).
+
+### Why this matters beyond the visible duplicate-icon symptom
+
+Two processes both writing to `~/.config/javalens-manager/projects.json` is an undefined-behaviour race. Likely outcomes: lost writes, corrupted JSON, the lower-numbered process's snapshot winning on a Last-Writer-Wins basis. So far apparently not observed in the wild — but the lack of single-instance enforcement is the door for that class of bug to walk through whenever a user double-launches and then both windows mutate state independently. Fixing this closes the door before someone reports a real data-loss incident.
+
+### Cross-reference
+
+- Tauri's official guidance on system-tray apps: enable `tauri-plugin-single-instance` from the project's first day with a tray. Sprint 7 introduced the tray, Sprint 12/13 refined it; the plugin was never added. Pre-existing oversight, not a regression.
+
+---
+
 ## #2 — Process-death flips workspace to `Stopped` instead of `Failed` (tray glyph stays gray, not red)
 
 - **Status:** OPEN — known since Sprint 12; cut-lined into Sprint 13 (see `v0.13.0` plan's Verification §5: *"... within ~5s the popover's dot for that workspace flips to gray (or red, once Process-death → Failed lands; tracked separately in upgrade-checklist)"*); now formally filed.
