@@ -8,6 +8,54 @@ For each entry include: ID, date observed, severity, reproducer, expected vs act
 
 ---
 
+## #2 — Process-death flips workspace to `Stopped` instead of `Failed` (tray glyph stays gray, not red)
+
+- **Status:** OPEN — known since Sprint 12; cut-lined into Sprint 13 (see `v0.13.0` plan's Verification §5: *"... within ~5s the popover's dot for that workspace flips to gray (or red, once Process-death → Failed lands; tracked separately in upgrade-checklist)"*); now formally filed.
+- **Date observed:** Sprint 12 (~2026-04-23); re-flagged 2026-05-11.
+- **Reporter:** Harald, via the agent-feedback / Sprint-13 cut-line trail.
+- **Server version:** manager v0.13.1 (all v0.12.x and v0.13.x affected).
+- **Severity:** LOW-MEDIUM — no data loss, no functional regression, but users can't tell at a glance whether a workspace was *intentionally stopped* or *externally killed*. Defeats half the tray-status promise from Sprint 12.
+
+### Reproducer
+
+1. Manager running with at least one workspace at status `running` (tray glyph `●`).
+2. From a shell, `kill -9 <PID>` of the javalens.jar process for that workspace.
+3. Wait 5 seconds for the 1s-poll cache-keyed change-detection to notice.
+4. Observe the tray glyph and the dashboard runtime status.
+
+### Expected
+
+Per the Sprint 12 design and the v0.13.0 popover-plan Verification, the workspace transitions to `RuntimePhase::Failed`. Tray glyph flips to `✗` (red on the popover, glyph `✗` on the native menu). Dashboard shows the workspace card as "Failed" so the user can decide to restart or investigate.
+
+### Actual
+
+The polling sees the PID has exited and transitions the workspace to `RuntimePhase::Stopped`. Tray glyph flips to `○` (gray). Indistinguishable from a user-initiated *Stop*.
+
+### Suspected root cause
+
+The supervisor in `runtime_manager.rs` (or wherever the per-workspace poll lives) doesn't track *how* a workspace transitioned out of `running`. The state machine has `Starting → Running → Stopping → Stopped`, with no branch for unexpected exits. When polling notices the process is gone, it falls through to `Stopped` because that's the only terminal state defined.
+
+### Suggested fix
+
+1. Track an *expected-stopping* flag set by `commands::stop_runtime` and `manager_service::toggle_workspace` when the user (or peer-stop-all) initiates a clean shutdown.
+2. On poll-detected exit:
+   - If the expected-stopping flag was set within the last N seconds → transition to `Stopped` (current behaviour).
+   - Otherwise → transition to `Failed` with the exit code (or "no exit code captured" if the child wait() lost the race with the kill).
+3. Phase machine: extend with `Failed { exit_code: Option<i32>, killed_at: SystemTime }`. The 1s-poll cache-keyed comparator already treats phase changes as the trigger, so the tray glyph flips correctly once `Failed` is plumbed in.
+4. UI side: `phase_glyph` in `src-tauri/src/lib.rs` already maps `Failed → "✗"`. The popover CSS already has `.dot--failed { background: #EF4444 }`. No frontend work needed.
+
+### Why this got cut from Sprint 13
+
+Sprint 13 was scoped to the tray-menu refinement against AppIndicator/GNOME constraints. Process-death detection is a state-machine concern, not a tray-rendering concern. The plan's Verification §5 said the cut was acceptable because users can still see the workspace name went non-green; calling it `Failed` vs `Stopped` is information-rich UX, not blocking-functional.
+
+### Cross-reference
+
+- Sprint 12 backlog originally promised this; deferred to v0.12.x patch and never landed.
+- Sprint 13 popover plan acknowledged it as a separate concern.
+- Fork's `docs/upgrade-checklist.md` Sprint 14 (v1.8.x) backlog section now references it (commit `91cbf5c` in the fork).
+
+---
+
 ## #1 — Tauri webview renders blank on aarch64 / NVIDIA Grace (and some x86_64 GPU stacks)
 
 - **Status:** PARTIAL FIX in v0.13.1 install.sh wrapper (commit `7f1f7b7`, 2026-05-11); **full fix pending v0.13.2** (bake the env-var into the `.deb` postinst and AppImage entry point so users who skip `install.sh` also get it).
