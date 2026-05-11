@@ -6,7 +6,7 @@ Desktop manager for running and orchestrating JavaLens MCP servers across multip
 
 ## Status
 
-**Beta (v0.13.0)**: `javalens-manager` is a fully functional desktop application on Linux. It supports named workspaces of multiple Java projects (each running as one shared JavaLens MCP service), live `workspace.json`-driven reconciliation, automatic fork-runtime download/update, and one-click deploy of MCP entries into Cursor / Claude Desktop / Antigravity / IntelliJ-style configs. The system-tray menu drives per-workspace lifecycle without opening the window. macOS and Windows builds are not yet automated; broader QA and cross-platform testing continue before a stable 1.0.
+**Beta (v0.13.1)**: `javalens-manager` is a fully functional desktop application on Linux (x86_64 and aarch64). It supports named workspaces of multiple Java projects (each running as one shared JavaLens MCP service), live `workspace.json`-driven reconciliation, automatic fork-runtime download/update, and one-click deploy of MCP entries into Cursor / Claude Desktop / Antigravity / IntelliJ-style configs. The system-tray menu drives per-workspace lifecycle without opening the window. macOS and Windows builds are not yet automated; broader QA and cross-platform testing continue before a stable 1.0.
 
 ### Version timeline
 
@@ -15,7 +15,9 @@ Desktop manager for running and orchestrating JavaLens MCP servers across multip
 - **v0.11.0** — Sprint 11 cutover; Help.md / README updates for fork v1.5.0's tool consolidation (66 → 55 tools) and v1.5.1's five JDT-LTK structural-refactoring tools (60 tools per service).
 - **v0.11.1** — Sprint 11 closeout; refreshed help screenshots; help/README cross-links for the new "System tray on Linux" caveat.
 - **v0.12.0** — Sprint 12: tray menu lifecycle controls — per-workspace toggle entries with status icons, Start all / Stop all peers, 5-second background refresh so external state changes (process death) propagate. Paired with [fork v1.6.0](https://github.com/hw1964/javalens-mcp/releases/tag/v1.6.0) which adds `compile_workspace` and `run_tests` (62 tools per service).
-- **v0.13.0** — Sprint 13 (this release): tray menu refined for the GNOME / AppIndicator reality. Per-menu-item icons get stripped on GNOME, so the colored disks shipped in v0.12.0 never reached the user — replaced with monochrome unicode bullets (`●` running, `◐` starting, `○` stopped, `✗` failed) that render reliably in the menu's own font. Cleaner menu shape: `Open dashboard` (raises the main window) → workspaces with bullets (click toggles) → Start all / Stop all → Quit. Plus a real fix: tray menu now reflects workspace renames within ~1 s instead of waiting for a runtime restart (workspace_status_summary reads names from the live config_store, not the cached runtime snapshots). 1-second poll with cache-keyed change detection so the menu doesn't flicker on steady state. Paired with [fork v1.7.0](https://github.com/hw1964/javalens-mcp/releases/tag/v1.7.0) which ships 11 new MCP tools across Ring 2 (code generation), Ring 3 (Maven dependency management), Ring 4 (formatter / workflow polish) — **73 tools per service**.
+- **v0.13.0** — Sprint 13: tray menu refined for the GNOME / AppIndicator reality. Per-menu-item icons get stripped on GNOME, so the colored disks shipped in v0.12.0 never reached the user — replaced with monochrome unicode bullets (`●` running, `◐` starting, `○` stopped, `✗` failed) that render reliably in the menu's own font. Cleaner menu shape: `Open dashboard` (raises the main window) → workspaces with bullets (click toggles) → Start all / Stop all → Quit. Plus a real fix: tray menu now reflects workspace renames within ~1 s instead of waiting for a runtime restart (workspace_status_summary reads names from the live config_store, not the cached runtime snapshots). 1-second poll with cache-keyed change detection so the menu doesn't flicker on steady state. Paired with [fork v1.7.0](https://github.com/hw1964/javalens-mcp/releases/tag/v1.7.0) which ships 11 new MCP tools across Ring 2 (code generation), Ring 3 (Maven dependency management), Ring 4 (formatter / workflow polish) — **73 tools per service**.
+
+- **v0.13.1** — packaging patch: GitHub release workflow now also builds for Linux **aarch64** on a free `ubuntu-22.04-arm` runner, so every tag publishes both `_amd64` and `_arm64` artifacts. `install.sh` now detects `uname -m` and pulls the matching AppImage automatically — the same `curl … | bash` works on x86_64 and ARM laptops/servers (verified on NVIDIA DGX Spark / GB10).
 
 See [`docs/release-notes/`](docs/release-notes/) for per-release detail.
 
@@ -48,8 +50,8 @@ Alternatively, you can download the `.deb` or `.AppImage` files manually from th
 If you launch the `.AppImage` manually, ensure it has executable permission first:
 
 ```bash
-chmod +x javalens-manager_0.13.0_amd64.AppImage
-./javalens-manager_0.13.0_amd64.AppImage
+chmod +x javalens-manager_0.13.1_amd64.AppImage   # or _aarch64 on ARM
+./javalens-manager_0.13.1_amd64.AppImage
 ```
 
 ### System tray on Linux
