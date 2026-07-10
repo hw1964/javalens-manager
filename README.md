@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> **⚠️ This project is archived — superseded by [jawata-studio](https://github.com/haraldwegner/jawata-studio).**
+> Development continued as **jawata-studio** (formerly goja-studio): the desktop manager
+> for jawata MCP servers. → **https://github.com/haraldwegner/jawata-studio**
+
 # javalens-manager
 
 Desktop manager for running and orchestrating JavaLens MCP servers across multiple Java projects.
